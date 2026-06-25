@@ -1,0 +1,10 @@
+{
+  "name": "ai-human-quality-tracker-shared",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Shared online AI Human Quality Tracker (Vercel + Upstash Redis).",
+  "dependencies": {
+    "@upstash/redis": "^1.34.3"
+  }
+}

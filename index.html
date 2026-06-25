@@ -1,0 +1,693 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>AI Human Quality Tracker</title>
+<style>
+  :root {
+    --bg: #f4f6fb; --panel: #ffffff; --ink: #1c2433; --muted: #687288; --line: #e3e8f0;
+    --accent: #3b5bdb; --accent-soft: #e8edff; --good: #2f9e63; --warn: #d98a00;
+    --bad: #d6435b; --crit: #c92a4a;
+    --shadow: 0 1px 2px rgba(20,30,50,.06), 0 4px 16px rgba(20,30,50,.06); --radius: 10px;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; background: var(--bg); color: var(--ink); font-size: 14px; line-height: 1.45; }
+  a { color: var(--accent); }
+  button { font-family: inherit; font-size: 13px; cursor: pointer; border: 1px solid var(--line); background: var(--panel); color: var(--ink); padding: 7px 12px; border-radius: 8px; transition: background .12s, border-color .12s; }
+  button:hover { background: #f0f3fa; }
+  button:disabled { opacity: .5; cursor: default; }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  button.primary:hover { background: #2f4ac0; }
+  button.danger { color: var(--bad); border-color: #f2c3cc; }
+  button.danger:hover { background: #fdeef1; }
+  button.ghost { border-color: transparent; background: transparent; }
+  button.small { padding: 4px 8px; font-size: 12px; }
+  input, select, textarea { font-family: inherit; font-size: 13px; color: var(--ink); background: #fff; border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; width: 100%; }
+  textarea { resize: vertical; min-height: 60px; }
+  label.field { display: block; }
+  label.field > span { display: block; font-size: 12px; font-weight: 600; color: var(--muted); margin-bottom: 4px; }
+  header.top { background: var(--panel); border-bottom: 1px solid var(--line); padding: 14px 24px; display: flex; align-items: center; gap: 14px; position: sticky; top: 0; z-index: 20; }
+  header.top .brand { font-size: 17px; font-weight: 700; display: flex; align-items: center; gap: 9px; }
+  .dot { width: 11px; height: 11px; border-radius: 50%; background: var(--accent); display: inline-block; }
+  header.top .meta { color: var(--muted); font-size: 12px; }
+  header.top .spacer { flex: 1; }
+  header.top .actions { display: flex; gap: 8px; align-items: center; }
+  nav.tabs { display: flex; gap: 4px; padding: 0 24px; background: var(--panel); border-bottom: 1px solid var(--line); position: sticky; top: 57px; z-index: 15; overflow-x: auto; }
+  nav.tabs .tab { padding: 11px 14px; font-size: 13px; font-weight: 600; color: var(--muted); border-bottom: 2px solid transparent; cursor: pointer; white-space: nowrap; }
+  nav.tabs .tab:hover { color: var(--ink); }
+  nav.tabs .tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+  main { padding: 22px 24px 60px; max-width: 1500px; margin: 0 auto; }
+  h2.view-title { margin: 0 0 4px; font-size: 19px; }
+  .view-sub { color: var(--muted); margin: 0 0 18px; font-size: 13px; }
+  .panel { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); box-shadow: var(--shadow); padding: 18px; margin-bottom: 18px; }
+  .panel h3 { margin: 0 0 14px; font-size: 15px; }
+  .grid-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px,1fr)); gap: 14px; }
+  .kpi { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 16px; box-shadow: var(--shadow); }
+  .kpi .label { font-size: 12px; color: var(--muted); font-weight: 600; text-transform: uppercase; letter-spacing: .03em; }
+  .kpi .value { font-size: 30px; font-weight: 700; margin-top: 6px; }
+  .kpi .sub { font-size: 12px; color: var(--muted); margin-top: 2px; }
+  .charts-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px,1fr)); gap: 16px; }
+  .bar-row { display: grid; grid-template-columns: 150px 1fr 42px; align-items: center; gap: 10px; margin-bottom: 9px; }
+  .bar-row .bl { font-size: 12.5px; color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .bar-track { background: #eef1f7; border-radius: 6px; height: 16px; overflow: hidden; }
+  .bar-fill { height: 100%; border-radius: 6px; background: var(--accent); }
+  .bar-num { font-size: 12.5px; text-align: right; font-variant-numeric: tabular-nums; color: var(--muted); }
+  .filters { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px,1fr)); gap: 10px; align-items: end; }
+  .table-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: var(--radius); background: var(--panel); }
+  table { border-collapse: collapse; width: 100%; font-size: 12.5px; }
+  th, td { text-align: left; padding: 9px 11px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { background: #f7f9fd; font-size: 11px; text-transform: uppercase; letter-spacing: .03em; color: var(--muted); position: sticky; top: 0; white-space: nowrap; cursor: pointer; }
+  th:hover { color: var(--ink); }
+  tbody tr:hover { background: #fafbff; }
+  td.wrap { max-width: 240px; white-space: normal; }
+  td .actions { display: flex; gap: 6px; }
+  .chip { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 11px; font-weight: 600; white-space: nowrap; }
+  .chip.crit { background: #fde7ec; color: var(--crit); }
+  .chip.major { background: #fdf0db; color: var(--warn); }
+  .chip.minor { background: #e7f3ee; color: var(--good); }
+  .chip.neutral { background: #eef1f7; color: var(--muted); }
+  .chip.open { background: #fde7ec; color: var(--bad); }
+  .chip.progress { background: #e8edff; color: var(--accent); }
+  .chip.monitoring { background: #fdf0db; color: var(--warn); }
+  .chip.resolved, .chip.closed { background: #e7f3ee; color: var(--good); }
+  .empty { text-align: center; padding: 48px 16px; color: var(--muted); }
+  .empty .big { font-size: 15px; font-weight: 600; color: var(--ink); margin-bottom: 6px; }
+  .overlay { position: fixed; inset: 0; background: rgba(20,28,45,.45); display: flex; align-items: flex-start; justify-content: center; padding: 30px 16px; z-index: 50; overflow-y: auto; }
+  .modal { background: var(--panel); border-radius: 14px; width: 100%; max-width: 820px; box-shadow: 0 20px 60px rgba(0,0,0,.3); }
+  .modal-head { display: flex; align-items: center; padding: 16px 20px; border-bottom: 1px solid var(--line); }
+  .modal-head h3 { margin: 0; font-size: 16px; }
+  .modal-body { padding: 20px; }
+  .modal-foot { padding: 14px 20px; border-top: 1px solid var(--line); display: flex; justify-content: flex-end; gap: 10px; }
+  .form-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 14px; }
+  .form-grid .span2 { grid-column: span 2; }
+  .form-grid .span3 { grid-column: span 3; }
+  .hint { font-size: 11.5px; color: var(--muted); margin-top: 3px; }
+  .toolbar { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-bottom: 14px; }
+  .toolbar .spacer { flex: 1; }
+  .count-pill { background: var(--accent-soft); color: var(--accent); font-weight: 600; border-radius: 999px; padding: 3px 10px; font-size: 12px; }
+  .tag-edit-row { display: flex; gap: 8px; align-items: center; margin-bottom: 8px; }
+  .tag-edit-row input { flex: 1; }
+  .cat-card { border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; margin-bottom: 10px; }
+  .cat-card .ttl { font-weight: 700; display: flex; align-items: center; gap: 8px; }
+  .cat-card textarea { margin-top: 8px; }
+  .pattern-item { border-left: 3px solid var(--accent); padding: 10px 14px; background: #fafbff; border-radius: 0 8px 8px 0; margin-bottom: 10px; }
+  .pattern-item .pi-top { display: flex; align-items: center; gap: 8px; }
+  .pattern-item .pi-cat { font-weight: 700; }
+  .toast { position: fixed; bottom: 22px; left: 50%; transform: translateX(-50%); background: #1c2433; color: #fff; padding: 10px 18px; border-radius: 8px; font-size: 13px; box-shadow: var(--shadow); z-index: 100; opacity: 0; transition: opacity .2s; pointer-events: none; max-width: 90vw; }
+  .toast.show { opacity: 1; }
+  .inline-note { font-size: 12px; color: var(--muted); }
+  .section-actions { display:flex; gap:8px; flex-wrap: wrap; }
+  /* login */
+  .login-wrap { min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 24px; }
+  .login-card { background: var(--panel); border: 1px solid var(--line); border-radius: 16px; box-shadow: var(--shadow); padding: 30px; width: 100%; max-width: 380px; }
+  .login-card h1 { font-size: 19px; margin: 0 0 4px; display: flex; align-items: center; gap: 9px; }
+  .login-card p { color: var(--muted); margin: 0 0 18px; font-size: 13px; }
+  .login-err { color: var(--bad); font-size: 12.5px; margin-top: 10px; min-height: 16px; }
+  .loading { text-align: center; padding: 80px 16px; color: var(--muted); }
+</style>
+</head>
+<body>
+<div id="app"></div>
+<div id="modalRoot"></div>
+<div class="toast" id="toast"></div>
+
+<script>
+"use strict";
+
+/* ------------------------------ App state -------------------------------- */
+let pass = sessionStorage.getItem("qa_pass") || null;
+let state = { entries: [], patterns: [], fixes: [], config: null };
+let activeTab = "dashboard";
+let filters = { from: "", to: "", reviewer: "", agent: "", environment: "", category: "", severity: "", status: "", q: "" };
+let sortKey = "dateReviewed";
+let sortDir = -1;
+let busy = false;
+
+const DEFAULT_CONFIG = {
+  categories: [
+    { name: "Conversation Flow", description: "The agent sounds scripted, resets the conversation, repeats itself, or does not move naturally through the call." },
+    { name: "Listening and Comprehension", description: "The agent misses clear caller input, asks for information already given, misunderstands the caller, or does not respond logically." },
+    { name: "Name Capture Issues", description: "The agent fails to pick up the caller's name correctly, mishears the name, stores the wrong name, or keeps asking for the name even after it was provided." },
+    { name: "Tone and Empathy", description: "The agent sounds too cold, too cheerful, too formal, dismissive, awkward, or emotionally mismatched to the caller." },
+    { name: "Hallucination or Assumption", description: "The agent invents information, assumes missing values, adds details the caller did not provide, or answers without enough confirmation." },
+    { name: "Variable and Data Capture", description: "The agent stores wrong values, fails to update values, captures invalid information, or continues with missing required data." },
+    { name: "API and Tool Handling", description: "The agent treats failed, incomplete, or null API responses as successful instead of verifying or escalating." },
+    { name: "Transfer and Escalation", description: "The agent transfers too early, refuses to transfer when needed, or gives an unnatural transfer message." },
+    { name: "Timing and Interruptions", description: "The agent cuts off the caller, talks over them, responds too slowly, or leaves awkward pauses." },
+    { name: "Policy or Workflow Issues", description: "The agent does not follow business rules, office rules, scheduling restrictions, eligibility rules, or the intended workflow." },
+  ],
+  severities: ["Critical", "Major", "Minor"],
+  statuses: ["Open", "In Progress", "Monitoring", "Resolved", "Closed"],
+  owners: ["Unassigned"],
+  environments: ["CANARY", "ENTERPRISE", "PROD"],
+  frequencies: ["One-off", "Occasional", "Frequent", "Every call"],
+};
+
+/* ------------------------------- Utilities ------------------------------- */
+function uid() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 7); }
+function todayISO() { return new Date().toISOString().slice(0, 10); }
+function nowISO() { return new Date().toISOString(); }
+function esc(s) {
+  return String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
+}
+function linkify(url) {
+  if (!url) return "<span class='inline-note'>—</span>";
+  const safe = esc(url); const label = url.length > 28 ? url.slice(0, 26) + "…" : url;
+  if (/^https?:\/\//i.test(url)) return `<a href="${safe}" target="_blank" rel="noopener">${esc(label)}</a>`;
+  return esc(url);
+}
+function sevClass(s) { const k = (s || "").toLowerCase(); if (k.startsWith("crit")) return "crit"; if (k.startsWith("maj")) return "major"; if (k.startsWith("min")) return "minor"; return "neutral"; }
+function sevColor(s) { const k = sevClass(s); return k === "crit" ? "var(--crit)" : k === "major" ? "var(--warn)" : k === "minor" ? "var(--good)" : "var(--muted)"; }
+function statusClass(s) { const k = (s || "").toLowerCase(); if (k.includes("open")) return "open"; if (k.includes("progress")) return "progress"; if (k.includes("monitor")) return "monitoring"; if (k.includes("resolv")) return "resolved"; if (k.includes("clos")) return "closed"; return "neutral"; }
+function toast(msg) { const t = document.getElementById("toast"); t.textContent = msg; t.classList.add("show"); clearTimeout(toast._t); toast._t = setTimeout(() => t.classList.remove("show"), 2200); }
+function options(list, selected) { return (list || []).map(v => `<option value="${esc(v)}"${v === selected ? " selected" : ""}>${esc(v)}</option>`).join(""); }
+
+/* --------------------------------- API ----------------------------------- */
+async function api(path, { method = "GET", body } = {}) {
+  const res = await fetch(path, {
+    method,
+    headers: { "content-type": "application/json", "x-qa-pass": pass || "" },
+    body: body ? JSON.stringify(body) : undefined,
+  });
+  if (res.status === 401) {
+    sessionStorage.removeItem("qa_pass"); pass = null;
+    renderLogin("Your session ended. Please sign in again.");
+    throw new Error("unauthorized");
+  }
+  if (!res.ok) { const j = await res.json().catch(() => ({})); throw new Error(j.error || ("HTTP " + res.status)); }
+  return res.json().catch(() => ({}));
+}
+function normalizeConfig(cfg) {
+  const c = cfg && typeof cfg === "object" ? cfg : {};
+  return {
+    categories: Array.isArray(c.categories) && c.categories.length ? c.categories : DEFAULT_CONFIG.categories,
+    severities: c.severities || DEFAULT_CONFIG.severities,
+    statuses: c.statuses || DEFAULT_CONFIG.statuses,
+    owners: c.owners || DEFAULT_CONFIG.owners,
+    environments: c.environments || DEFAULT_CONFIG.environments,
+    frequencies: c.frequencies || DEFAULT_CONFIG.frequencies,
+  };
+}
+async function loadData() {
+  const d = await api("/api/data");
+  state = { entries: d.entries || [], patterns: d.patterns || [], fixes: d.fixes || [], config: normalizeConfig(d.config) };
+}
+async function putItem(kind, item) {
+  await api("/api/save", { method: "POST", body: { kind, item } });
+  const arr = state[kind]; const i = arr.findIndex(x => x.id === item.id);
+  if (i >= 0) arr[i] = item; else arr.unshift(item);
+}
+async function removeItemRemote(kind, id) {
+  await api("/api/delete", { method: "POST", body: { kind, id } });
+  state[kind] = state[kind].filter(x => x.id !== id);
+}
+async function persistConfig() { await api("/api/save", { method: "POST", body: { kind: "config", config: state.config } }); }
+
+/* --------------------------------- Login --------------------------------- */
+function renderLogin(errMsg) {
+  document.getElementById("modalRoot").innerHTML = "";
+  document.getElementById("app").innerHTML = `
+    <div class="login-wrap"><div class="login-card">
+      <h1><span class="dot"></span> AI Human Quality Tracker</h1>
+      <p>Enter your team password to continue.</p>
+      <input type="password" id="loginPass" placeholder="Team password" autofocus>
+      <div class="login-err" id="loginErr">${esc(errMsg || "")}</div>
+      <button class="primary" id="loginBtn" style="width:100%;margin-top:6px">Sign in</button>
+    </div></div>`;
+  const input = document.getElementById("loginPass");
+  const btn = document.getElementById("loginBtn");
+  const submit = async () => {
+    const val = input.value;
+    btn.disabled = true; document.getElementById("loginErr").textContent = "";
+    try {
+      const r = await fetch("/api/login", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ password: val }) });
+      if (!r.ok) { document.getElementById("loginErr").textContent = "Incorrect password."; btn.disabled = false; input.focus(); return; }
+      pass = val; sessionStorage.setItem("qa_pass", val);
+      await boot();
+    } catch (e) { document.getElementById("loginErr").textContent = "Network error. Try again."; btn.disabled = false; }
+  };
+  btn.addEventListener("click", submit);
+  input.addEventListener("keydown", e => { if (e.key === "Enter") submit(); });
+}
+
+/* ------------------------------ App shell -------------------------------- */
+const TABS = [
+  { key: "dashboard", label: "Dashboard" },
+  { key: "tracker", label: "Tracker" },
+  { key: "patterns", label: "Recurring Patterns" },
+  { key: "fixes", label: "Recommended Fixes" },
+  { key: "settings", label: "Settings" },
+];
+function mountShell() {
+  document.getElementById("app").innerHTML = `
+    <header class="top">
+      <div class="brand"><span class="dot"></span> AI Human Quality Tracker</div>
+      <div class="meta" id="metaLine"></div>
+      <div class="spacer"></div>
+      <div class="actions">
+        <button id="newEntryTop" class="primary">+ New QA Entry</button>
+        <button id="refreshBtn" title="Reload latest from the team database">↻ Refresh</button>
+        <button id="logoutBtn" class="ghost">Sign out</button>
+      </div>
+    </header>
+    <nav class="tabs" id="tabs"></nav>
+    <main id="view"></main>`;
+  document.getElementById("tabs").addEventListener("click", e => { const t = e.target.closest("[data-tab]"); if (t) setTab(t.getAttribute("data-tab")); });
+  document.getElementById("newEntryTop").addEventListener("click", () => openEntryModal());
+  document.getElementById("refreshBtn").addEventListener("click", refresh);
+  document.getElementById("logoutBtn").addEventListener("click", () => { sessionStorage.removeItem("qa_pass"); pass = null; renderLogin(); });
+  renderTabs();
+}
+function renderTabs() {
+  const el = document.getElementById("tabs"); if (!el) return;
+  el.innerHTML = TABS.map(t => `<div class="tab ${t.key === activeTab ? "active" : ""}" data-tab="${t.key}">${t.label}</div>`).join("");
+}
+function setTab(k) { activeTab = k; renderTabs(); render(); }
+async function refresh() {
+  const btn = document.getElementById("refreshBtn"); if (btn) btn.disabled = true;
+  try { await loadData(); render(); toast("Up to date."); }
+  catch (e) { if (e.message !== "unauthorized") toast("Refresh failed: " + e.message); }
+  finally { if (btn) btn.disabled = false; }
+}
+
+/* ------------------------------- Rendering -------------------------------- */
+function render() {
+  const meta = document.getElementById("metaLine");
+  if (meta) meta.textContent = `${state.entries.length} entries · ${state.config.categories.length} categories`;
+  const view = document.getElementById("view"); if (!view) return;
+  if (activeTab === "dashboard") view.innerHTML = viewDashboard();
+  else if (activeTab === "tracker") view.innerHTML = viewTracker();
+  else if (activeTab === "patterns") view.innerHTML = viewPatterns();
+  else if (activeTab === "fixes") view.innerHTML = viewFixes();
+  else if (activeTab === "settings") view.innerHTML = viewSettings();
+  if (activeTab === "tracker") bindTrackerFilters();
+}
+function countBy(items, keyFn) {
+  const m = new Map();
+  items.forEach(it => { const k = keyFn(it) || "—"; m.set(k, (m.get(k) || 0) + 1); });
+  return [...m.entries()].sort((a, b) => b[1] - a[1]);
+}
+function barChart(pairs, colorFn) {
+  if (!pairs.length) return `<div class="inline-note">No data yet.</div>`;
+  const max = Math.max(...pairs.map(p => p[1]));
+  return pairs.map(([label, n]) => `
+    <div class="bar-row">
+      <div class="bl" title="${esc(label)}">${esc(label)}</div>
+      <div class="bar-track"><div class="bar-fill" style="width:${max ? (n / max) * 100 : 0}%;${colorFn ? "background:" + colorFn(label) : ""}"></div></div>
+      <div class="bar-num">${n}</div>
+    </div>`).join("");
+}
+
+/* -------------------------------- DASHBOARD ------------------------------- */
+function viewDashboard() {
+  const e = state.entries;
+  const open = e.filter(x => statusClass(x.status) === "open" || statusClass(x.status) === "progress").length;
+  const crit = e.filter(x => sevClass(x.severity) === "crit").length;
+  const agents = new Set(e.map(x => x.agent).filter(Boolean)).size;
+  const last7 = e.filter(x => { if (!x.dateReviewed) return false; const d = new Date(x.dateReviewed); return (Date.now() - d.getTime()) / 86400000 <= 7; }).length;
+  if (!e.length) {
+    return `${dashHeader()}
+      <div class="panel"><div class="empty">
+        <div class="big">No QA entries yet</div>
+        <div>Log your first daily call review issue to populate the dashboard.</div>
+        <div style="margin-top:14px"><button class="primary" onclick="openEntryModal()">+ New QA Entry</button>
+        <button onclick="loadSampleData()" style="margin-left:8px">Load sample data</button></div>
+      </div></div>`;
+  }
+  return `${dashHeader()}
+    <div class="grid-cards" style="margin-bottom:18px">
+      ${kpi("Total Issues", e.length, "all logged entries")}
+      ${kpi("Open / In Progress", open, "needs attention", open ? "var(--bad)" : "var(--good)")}
+      ${kpi("Critical", crit, "severity = critical", crit ? "var(--crit)" : "var(--good)")}
+      ${kpi("Agents Flagged", agents, "distinct agents")}
+      ${kpi("Last 7 Days", last7, "recent reviews")}
+    </div>
+    <div class="charts-grid">
+      <div class="panel"><h3>Issues by Category</h3>${barChart(countBy(e, x => x.category))}</div>
+      <div class="panel"><h3>Issues by Severity</h3>${barChart(countBy(e, x => x.severity), sevColor)}</div>
+      <div class="panel"><h3>Issues by Agent</h3>${barChart(countBy(e, x => x.agent))}</div>
+      <div class="panel"><h3>Issues by Environment</h3>${barChart(countBy(e, x => x.environment))}</div>
+      <div class="panel"><h3>Issues by Status</h3>${barChart(countBy(e, x => x.status))}</div>
+      <div class="panel"><h3>Issues by Reviewer</h3>${barChart(countBy(e, x => x.reviewer))}</div>
+    </div>`;
+}
+function dashHeader() { return `<h2 class="view-title">Dashboard</h2><p class="view-sub">Where AI agents behave in ways that feel unnatural, robotic, incorrect, or not human.</p>`; }
+function kpi(label, value, sub, accent) { return `<div class="kpi"><div class="label">${esc(label)}</div><div class="value"${accent ? ` style="color:${accent}"` : ""}>${value}</div><div class="sub">${esc(sub)}</div></div>`; }
+
+/* --------------------------------- TRACKER -------------------------------- */
+const COLUMNS = [
+  { key: "dateReviewed", label: "Date" }, { key: "reviewer", label: "Reviewer" }, { key: "environment", label: "Env" },
+  { key: "agent", label: "Agent" }, { key: "category", label: "Category" }, { key: "behavior", label: "Behavior Observed" },
+  { key: "humanWould", label: "Human Would Have" }, { key: "callerImpact", label: "Caller Impact" }, { key: "severity", label: "Severity" },
+  { key: "frequency", label: "Frequency" }, { key: "status", label: "Status" }, { key: "owner", label: "Owner" },
+  { key: "timestamp", label: "Timestamp" }, { key: "callLink", label: "Call Link" },
+];
+function applyFilters(list) {
+  return list.filter(x => {
+    if (filters.from && (x.dateReviewed || "") < filters.from) return false;
+    if (filters.to && (x.dateReviewed || "") > filters.to) return false;
+    if (filters.reviewer && x.reviewer !== filters.reviewer) return false;
+    if (filters.agent && x.agent !== filters.agent) return false;
+    if (filters.environment && x.environment !== filters.environment) return false;
+    if (filters.category && x.category !== filters.category) return false;
+    if (filters.severity && x.severity !== filters.severity) return false;
+    if (filters.status && x.status !== filters.status) return false;
+    if (filters.q) { const hay = [x.behavior, x.humanWould, x.callerImpact, x.notes, x.recommendedFix, x.agent, x.reviewer].join(" ").toLowerCase(); if (!hay.includes(filters.q.toLowerCase())) return false; }
+    return true;
+  });
+}
+function sortEntries(list) {
+  return [...list].sort((a, b) => { const av = (a[sortKey] || "").toString().toLowerCase(); const bv = (b[sortKey] || "").toString().toLowerCase(); if (av < bv) return -1 * sortDir; if (av > bv) return 1 * sortDir; return 0; });
+}
+function uniqVals(key) { return [...new Set(state.entries.map(x => x[key]).filter(Boolean))].sort(); }
+function viewTracker() {
+  const c = state.config;
+  const filtered = sortEntries(applyFilters(state.entries));
+  const filterRow = `<div class="panel"><div class="filters">
+        <label class="field"><span>From date</span><input type="date" id="f_from" value="${esc(filters.from)}"></label>
+        <label class="field"><span>To date</span><input type="date" id="f_to" value="${esc(filters.to)}"></label>
+        <label class="field"><span>Reviewer</span><select id="f_reviewer"><option value="">All</option>${options(uniqVals("reviewer"), filters.reviewer)}</select></label>
+        <label class="field"><span>Agent</span><select id="f_agent"><option value="">All</option>${options(uniqVals("agent"), filters.agent)}</select></label>
+        <label class="field"><span>Environment</span><select id="f_environment"><option value="">All</option>${options(c.environments, filters.environment)}</select></label>
+        <label class="field"><span>Category</span><select id="f_category"><option value="">All</option>${options(c.categories.map(x => x.name), filters.category)}</select></label>
+        <label class="field"><span>Severity</span><select id="f_severity"><option value="">All</option>${options(c.severities, filters.severity)}</select></label>
+        <label class="field"><span>Status</span><select id="f_status"><option value="">All</option>${options(c.statuses, filters.status)}</select></label>
+        <label class="field"><span>Search text</span><input type="text" id="f_q" placeholder="behavior, notes…" value="${esc(filters.q)}"></label>
+        <div><button id="f_clear">Clear filters</button></div>
+      </div></div>`;
+  const head = `<tr>${COLUMNS.map(col => `<th data-sort="${col.key}">${esc(col.label)}${sortKey === col.key ? (sortDir === 1 ? " ▲" : " ▼") : ""}</th>`).join("")}<th>Actions</th></tr>`;
+  const body = filtered.length ? filtered.map(x => `<tr>
+      <td>${esc(x.dateReviewed)}</td><td>${esc(x.reviewer)}</td><td><span class="chip neutral">${esc(x.environment)}</span></td>
+      <td>${esc(x.agent)}</td><td>${esc(x.category)}</td><td class="wrap">${esc(x.behavior)}</td>
+      <td class="wrap">${esc(x.humanWould)}</td><td class="wrap">${esc(x.callerImpact)}</td>
+      <td><span class="chip ${sevClass(x.severity)}">${esc(x.severity)}</span></td><td>${esc(x.frequency)}</td>
+      <td><span class="chip ${statusClass(x.status)}">${esc(x.status)}</span></td><td>${esc(x.owner)}</td>
+      <td>${esc(x.timestamp)}</td><td>${linkify(x.callLink)}</td>
+      <td><div class="actions"><button class="small" onclick="openEntryModal('${x.id}')">Edit</button><button class="small danger" onclick="deleteEntry('${x.id}')">Del</button></div></td>
+    </tr>`).join("") : `<tr><td colspan="${COLUMNS.length + 1}"><div class="empty"><div class="big">No matching entries</div><div>Adjust filters or add a new entry.</div></div></td></tr>`;
+  return `<h2 class="view-title">AI Human Quality Tracker</h2>
+    <p class="view-sub">Add, edit, filter, and delete daily call review issues. Shared live with your team.</p>
+    ${filterRow}
+    <div class="toolbar">
+      <button class="primary" onclick="openEntryModal()">+ New QA Entry</button>
+      <span class="count-pill">${filtered.length} of ${state.entries.length} shown</span>
+      <div class="spacer"></div>
+      <button onclick="exportCSV()">⬇ Export CSV</button>
+      <button onclick="exportJSON()">⬇ Backup JSON</button>
+    </div>
+    <div class="table-wrap"><table><thead>${head}</thead><tbody>${body}</tbody></table></div>`;
+}
+function bindTrackerFilters() {
+  const map = { f_from: "from", f_to: "to", f_reviewer: "reviewer", f_agent: "agent", f_environment: "environment", f_category: "category", f_severity: "severity", f_status: "status", f_q: "q" };
+  Object.keys(map).forEach(id => {
+    const el = document.getElementById(id); if (!el) return;
+    const ev = el.type === "text" ? "input" : "change";
+    el.addEventListener(ev, () => { filters[map[id]] = el.value; render(); if (id === "f_q") { const b = document.getElementById("f_q"); b.focus(); b.setSelectionRange(b.value.length, b.value.length); } });
+  });
+  const clear = document.getElementById("f_clear");
+  if (clear) clear.addEventListener("click", () => { filters = { from: "", to: "", reviewer: "", agent: "", environment: "", category: "", severity: "", status: "", q: "" }; render(); });
+  document.querySelectorAll("th[data-sort]").forEach(th => { th.addEventListener("click", () => { const k = th.getAttribute("data-sort"); if (sortKey === k) sortDir *= -1; else { sortKey = k; sortDir = 1; } render(); }); });
+}
+
+/* ----------------------------- Entry modal -------------------------------- */
+function openEntryModal(id) {
+  const c = state.config;
+  const e = id ? state.entries.find(x => x.id === id) : null;
+  const v = e || { dateReviewed: todayISO(), reviewer: "", environment: c.environments[0] || "", agent: "", callLink: "", timestamp: "", category: c.categories[0] ? c.categories[0].name : "", behavior: "", humanWould: "", callerImpact: "", severity: c.severities[0] || "", frequency: c.frequencies[0] || "", status: c.statuses[0] || "", owner: c.owners[0] || "", recommendedFix: "", notes: "" };
+  const catDesc = (c.categories.find(x => x.name === v.category) || {}).description || "";
+  document.getElementById("modalRoot").innerHTML = `<div class="overlay" id="overlay"><div class="modal">
+      <div class="modal-head"><h3>${e ? "Edit" : "New"} QA Entry</h3><div style="flex:1"></div><button class="ghost" onclick="closeModal()">✕</button></div>
+      <div class="modal-body"><div class="form-grid">
+          <label class="field"><span>Date Reviewed</span><input type="date" id="m_dateReviewed" value="${esc(v.dateReviewed)}"></label>
+          <label class="field"><span>Reviewer Name</span><input type="text" id="m_reviewer" value="${esc(v.reviewer)}" placeholder="e.g. Jordan P."></label>
+          <label class="field"><span>Environment</span><select id="m_environment">${options(c.environments, v.environment)}</select></label>
+          <label class="field"><span>Agent Name</span><input type="text" id="m_agent" value="${esc(v.agent)}" placeholder="e.g. Scheduling Agent"></label>
+          <label class="field"><span>Call Link</span><input type="text" id="m_callLink" value="${esc(v.callLink)}" placeholder="https://…"></label>
+          <label class="field"><span>Timestamp</span><input type="text" id="m_timestamp" value="${esc(v.timestamp)}" placeholder="e.g. 1:17"></label>
+          <label class="field span2"><span>Issue Category</span><select id="m_category" onchange="document.getElementById('catDescHint').textContent=window.__catDesc(this.value)">${options(c.categories.map(x => x.name), v.category)}</select><div class="hint" id="catDescHint">${esc(catDesc)}</div></label>
+          <label class="field"><span>Severity</span><select id="m_severity">${options(c.severities, v.severity)}</select></label>
+          <label class="field span3"><span>Specific Behavior Observed</span><textarea id="m_behavior" placeholder="What the agent actually did…">${esc(v.behavior)}</textarea></label>
+          <label class="field span3"><span>What a Human Would Have Done</span><textarea id="m_humanWould" placeholder="The natural / correct human behavior…">${esc(v.humanWould)}</textarea></label>
+          <label class="field span3"><span>Caller Impact</span><textarea id="m_callerImpact" placeholder="How this affected the caller…">${esc(v.callerImpact)}</textarea></label>
+          <label class="field"><span>Frequency</span><select id="m_frequency">${options(c.frequencies, v.frequency)}</select></label>
+          <label class="field"><span>Status</span><select id="m_status">${options(c.statuses, v.status)}</select></label>
+          <label class="field"><span>Owner</span><select id="m_owner">${options(c.owners, v.owner)}</select></label>
+          <label class="field span3"><span>Recommended Fix</span><textarea id="m_recommendedFix" placeholder="Suggested improvement…">${esc(v.recommendedFix)}</textarea></label>
+          <label class="field span3"><span>Notes</span><textarea id="m_notes" placeholder="Additional context…">${esc(v.notes)}</textarea></label>
+      </div></div>
+      <div class="modal-foot"><button onclick="closeModal()">Cancel</button>
+        <button class="primary" id="saveEntryBtn" onclick="saveEntry(${e ? "'" + e.id + "'" : "null"})">${e ? "Update" : "Save"} Entry</button></div>
+    </div></div>`;
+}
+window.__catDesc = function (name) { return (state.config.categories.find(x => x.name === name) || {}).description || ""; };
+function closeModal() { document.getElementById("modalRoot").innerHTML = ""; }
+
+async function saveEntry(id) {
+  const get = k => { const el = document.getElementById("m_" + k); return el ? el.value.trim() : ""; };
+  const fields = ["dateReviewed", "reviewer", "environment", "agent", "callLink", "timestamp", "category", "behavior", "humanWould", "callerImpact", "severity", "frequency", "status", "owner", "recommendedFix", "notes"];
+  const data = {}; fields.forEach(f => data[f] = get(f));
+  if (!data.behavior) { toast("Please describe the behavior observed."); return; }
+  const btn = document.getElementById("saveEntryBtn"); if (btn) btn.disabled = true;
+  try {
+    let item;
+    if (id) { const e = state.entries.find(x => x.id === id); item = Object.assign({}, e, data, { updatedAt: nowISO() }); }
+    else { item = Object.assign({ id: uid(), createdAt: nowISO(), updatedAt: nowISO() }, data); }
+    await putItem("entries", item);
+    closeModal(); render(); toast(id ? "Entry updated." : "Entry added.");
+  } catch (e) { if (e.message !== "unauthorized") { toast("Save failed: " + e.message); if (btn) btn.disabled = false; } }
+}
+async function deleteEntry(id) {
+  const e = state.entries.find(x => x.id === id);
+  if (!confirm("Delete this entry?\n\n" + (e ? (e.category + ": " + (e.behavior || "").slice(0, 80)) : ""))) return;
+  try { await removeItemRemote("entries", id); render(); toast("Entry deleted."); }
+  catch (err) { if (err.message !== "unauthorized") toast("Delete failed: " + err.message); }
+}
+
+/* ------------------------------- PATTERNS --------------------------------- */
+function viewPatterns() {
+  const e = state.entries;
+  const byCat = countBy(e, x => x.category).filter(p => p[1] >= 2);
+  const byAgentCat = countBy(e, x => (x.agent || "—") + " · " + (x.category || "—")).filter(p => p[1] >= 2);
+  const autoCat = byCat.length ? byCat.map(([c, n]) => `<div class="pattern-item"><div class="pi-top"><span class="pi-cat">${esc(c)}</span><span class="count-pill">${n} occurrences</span></div></div>`).join("") : `<div class="inline-note">No category has repeated yet (needs 2+).</div>`;
+  const autoAgent = byAgentCat.length ? byAgentCat.map(([c, n]) => `<div class="pattern-item"><div class="pi-top"><span class="pi-cat">${esc(c)}</span><span class="count-pill">${n}×</span></div></div>`).join("") : `<div class="inline-note">No agent+category combination has repeated yet.</div>`;
+  const manual = state.patterns.length ? state.patterns.map(p => `
+    <div class="pattern-item"><div class="pi-top"><span class="pi-cat">${esc(p.title)}</span>
+        <span class="chip neutral">${esc(p.category || "General")}</span>
+        <span class="chip ${statusClass(p.status)}">${esc(p.status || "Open")}</span>
+        <div style="flex:1"></div>
+        <button class="small" onclick="openPatternModal('${p.id}')">Edit</button>
+        <button class="small danger" onclick="deletePattern('${p.id}')">Del</button></div>
+      <div style="margin-top:6px">${esc(p.description)}</div></div>`).join("") : `<div class="empty"><div>No tracked patterns yet. Capture a recurring non-human behavior to watch over time.</div></div>`;
+  return `<h2 class="view-title">Recurring Patterns</h2>
+    <p class="view-sub">Spot repeated non-human behavior so it can become an actionable improvement.</p>
+    <div class="charts-grid">
+      <div class="panel"><h3>Auto: Repeating Categories</h3>${autoCat}</div>
+      <div class="panel"><h3>Auto: Repeating Agent + Category</h3>${autoAgent}</div>
+    </div>
+    <div class="panel"><div class="toolbar"><h3 style="margin:0">Tracked Patterns</h3><div class="spacer"></div>
+        <button class="primary" onclick="openPatternModal()">+ Add Pattern</button></div>${manual}</div>`;
+}
+function openPatternModal(id) {
+  const c = state.config;
+  const p = id ? state.patterns.find(x => x.id === id) : { title: "", category: "", description: "", status: c.statuses[0] || "Open" };
+  document.getElementById("modalRoot").innerHTML = `<div class="overlay" id="overlay"><div class="modal" style="max-width:620px">
+    <div class="modal-head"><h3>${id ? "Edit" : "Add"} Pattern</h3><div style="flex:1"></div><button class="ghost" onclick="closeModal()">✕</button></div>
+    <div class="modal-body"><div class="form-grid">
+      <label class="field span3"><span>Pattern Title</span><input id="p_title" value="${esc(p.title)}" placeholder="e.g. Agent re-asks for name across calls"></label>
+      <label class="field span2"><span>Category</span><select id="p_category"><option value="">General</option>${options(c.categories.map(x => x.name), p.category)}</select></label>
+      <label class="field"><span>Status</span><select id="p_status">${options(c.statuses, p.status)}</select></label>
+      <label class="field span3"><span>Description</span><textarea id="p_description" placeholder="Describe the recurring behavior and where it shows up…">${esc(p.description)}</textarea></label>
+    </div></div>
+    <div class="modal-foot"><button onclick="closeModal()">Cancel</button><button class="primary" id="savePatternBtn" onclick="savePattern(${id ? "'" + id + "'" : "null"})">Save</button></div>
+  </div></div>`;
+}
+async function savePattern(id) {
+  const g = k => (document.getElementById("p_" + k) || {}).value || "";
+  const base = { title: g("title").trim(), category: g("category"), description: g("description").trim(), status: g("status") };
+  if (!base.title) { toast("Pattern needs a title."); return; }
+  const btn = document.getElementById("savePatternBtn"); if (btn) btn.disabled = true;
+  try {
+    let item = id ? Object.assign({}, state.patterns.find(x => x.id === id), base) : Object.assign({ id: uid() }, base);
+    await putItem("patterns", item); closeModal(); render(); toast("Pattern saved.");
+  } catch (e) { if (e.message !== "unauthorized") { toast("Save failed: " + e.message); if (btn) btn.disabled = false; } }
+}
+async function deletePattern(id) {
+  if (!confirm("Delete this pattern?")) return;
+  try { await removeItemRemote("patterns", id); render(); toast("Pattern deleted."); }
+  catch (e) { if (e.message !== "unauthorized") toast("Delete failed: " + e.message); }
+}
+
+/* --------------------------------- FIXES ---------------------------------- */
+function viewFixes() {
+  const rows = state.fixes.length ? state.fixes.map(f => `
+    <tr><td>${esc(f.category || "—")}</td><td class="wrap"><strong>${esc(f.title)}</strong></td><td class="wrap">${esc(f.fix)}</td>
+      <td><span class="chip ${sevClass(f.priority)}">${esc(f.priority || "—")}</span></td><td>${esc(f.owner || "—")}</td>
+      <td><span class="chip ${statusClass(f.status)}">${esc(f.status || "Open")}</span></td>
+      <td><div class="actions"><button class="small" onclick="openFixModal('${f.id}')">Edit</button><button class="small danger" onclick="deleteFix('${f.id}')">Del</button></div></td>
+    </tr>`).join("") : `<tr><td colspan="7"><div class="empty"><div class="big">No recommended fixes yet</div><div>Turn recurring findings into concrete improvements.</div></div></td></tr>`;
+  return `<h2 class="view-title">Recommended Fixes</h2>
+    <p class="view-sub">Actionable improvements derived from QA findings.</p>
+    <div class="toolbar"><button class="primary" onclick="openFixModal()">+ Add Fix</button><span class="count-pill">${state.fixes.length} fixes</span></div>
+    <div class="table-wrap"><table><thead><tr><th>Category</th><th>Title</th><th>Recommended Fix</th><th>Priority</th><th>Owner</th><th>Status</th><th>Actions</th></tr></thead><tbody>${rows}</tbody></table></div>`;
+}
+function openFixModal(id) {
+  const c = state.config;
+  const f = id ? state.fixes.find(x => x.id === id) : { category: "", title: "", fix: "", priority: c.severities[0] || "", owner: c.owners[0] || "", status: c.statuses[0] || "Open" };
+  document.getElementById("modalRoot").innerHTML = `<div class="overlay" id="overlay"><div class="modal" style="max-width:680px">
+    <div class="modal-head"><h3>${id ? "Edit" : "Add"} Recommended Fix</h3><div style="flex:1"></div><button class="ghost" onclick="closeModal()">✕</button></div>
+    <div class="modal-body"><div class="form-grid">
+      <label class="field span2"><span>Category</span><select id="x_category"><option value="">General</option>${options(c.categories.map(x => x.name), f.category)}</select></label>
+      <label class="field"><span>Priority</span><select id="x_priority">${options(c.severities, f.priority)}</select></label>
+      <label class="field span3"><span>Title</span><input id="x_title" value="${esc(f.title)}" placeholder="e.g. Confirm captured name before proceeding"></label>
+      <label class="field span3"><span>Recommended Fix</span><textarea id="x_fix" placeholder="Describe the concrete change…">${esc(f.fix)}</textarea></label>
+      <label class="field"><span>Owner</span><select id="x_owner">${options(c.owners, f.owner)}</select></label>
+      <label class="field"><span>Status</span><select id="x_status">${options(c.statuses, f.status)}</select></label>
+    </div></div>
+    <div class="modal-foot"><button onclick="closeModal()">Cancel</button><button class="primary" id="saveFixBtn" onclick="saveFix(${id ? "'" + id + "'" : "null"})">Save</button></div>
+  </div></div>`;
+}
+async function saveFix(id) {
+  const g = k => (document.getElementById("x_" + k) || {}).value || "";
+  const base = { category: g("category"), title: g("title").trim(), fix: g("fix").trim(), priority: g("priority"), owner: g("owner"), status: g("status") };
+  if (!base.title) { toast("Fix needs a title."); return; }
+  const btn = document.getElementById("saveFixBtn"); if (btn) btn.disabled = true;
+  try {
+    let item = id ? Object.assign({}, state.fixes.find(x => x.id === id), base) : Object.assign({ id: uid() }, base);
+    await putItem("fixes", item); closeModal(); render(); toast("Fix saved.");
+  } catch (e) { if (e.message !== "unauthorized") { toast("Save failed: " + e.message); if (btn) btn.disabled = false; } }
+}
+async function deleteFix(id) {
+  if (!confirm("Delete this fix?")) return;
+  try { await removeItemRemote("fixes", id); render(); toast("Fix deleted."); }
+  catch (e) { if (e.message !== "unauthorized") toast("Delete failed: " + e.message); }
+}
+
+/* -------------------------------- SETTINGS -------------------------------- */
+function viewSettings() {
+  const c = state.config;
+  const cats = c.categories.map((cat, i) => `
+    <div class="cat-card"><div class="ttl"><input value="${esc(cat.name)}" data-cat-name="${i}" style="font-weight:700">
+        <button class="small danger" onclick="removeCategory(${i})">Remove</button></div>
+      <textarea data-cat-desc="${i}" placeholder="Description">${esc(cat.description)}</textarea></div>`).join("");
+  return `<h2 class="view-title">Settings</h2>
+    <p class="view-sub">Edit categories and dropdown values as patterns change over time. Changes apply for the whole team.</p>
+    <div class="panel"><div class="toolbar"><h3 style="margin:0">Issue Categories</h3><div class="spacer"></div>
+        <button onclick="addCategory()">+ Add Category</button>
+        <button class="primary" onclick="saveCategories()">Save Categories</button></div>${cats}</div>
+    ${listEditor("Severity Labels", "severities")}
+    ${listEditor("Statuses", "statuses")}
+    ${listEditor("Owners", "owners")}
+    ${listEditor("Environments", "environments")}
+    ${listEditor("Frequencies", "frequencies")}
+    <div class="panel"><h3>Data Management</h3>
+      <div class="section-actions">
+        <button onclick="exportCSV()">⬇ Export entries CSV</button>
+        <button onclick="exportJSON()">⬇ Backup all data (JSON)</button>
+        <button onclick="document.getElementById('importFile').click()">⬆ Import JSON (adds/updates)</button>
+        <input type="file" id="importFile" accept="application/json" style="display:none" onchange="importJSON(event)">
+        <button onclick="loadSampleData()">Load sample data</button>
+      </div>
+      <div class="hint" style="margin-top:8px">Data is stored in your team's shared cloud database. Everyone with the password sees the same entries.</div>
+    </div>`;
+}
+function listEditor(title, key) {
+  const list = state.config[key] || [];
+  const rows = list.map((v, i) => `<div class="tag-edit-row"><input value="${esc(v)}" data-list="${key}" data-idx="${i}"><button class="small danger" onclick="removeListItem('${key}',${i})">✕</button></div>`).join("");
+  return `<div class="panel"><div class="toolbar"><h3 style="margin:0">${esc(title)}</h3><div class="spacer"></div>
+      <button onclick="addListItem('${key}')">+ Add</button><button class="primary" onclick="saveList('${key}')">Save</button></div>
+    ${rows || '<div class="inline-note">No values.</div>'}</div>`;
+}
+async function syncConfig(msg) {
+  try { await persistConfig(); render(); if (msg) toast(msg); }
+  catch (e) { if (e.message !== "unauthorized") { toast("Save failed: " + e.message); await refresh(); } }
+}
+function addCategory() { state.config.categories.push({ name: "New Category", description: "" }); syncConfig(); }
+function removeCategory(i) { if (!confirm("Remove this category?")) return; state.config.categories.splice(i, 1); syncConfig("Category removed."); }
+function saveCategories() {
+  document.querySelectorAll("[data-cat-name]").forEach(el => { const i = +el.getAttribute("data-cat-name"); if (state.config.categories[i]) state.config.categories[i].name = el.value.trim(); });
+  document.querySelectorAll("[data-cat-desc]").forEach(el => { const i = +el.getAttribute("data-cat-desc"); if (state.config.categories[i]) state.config.categories[i].description = el.value.trim(); });
+  state.config.categories = state.config.categories.filter(c => c.name);
+  syncConfig("Categories saved.");
+}
+function addListItem(key) { state.config[key].push("New value"); syncConfig(); }
+function removeListItem(key, i) { state.config[key].splice(i, 1); syncConfig(); }
+function saveList(key) {
+  const vals = []; document.querySelectorAll(`[data-list="${key}"]`).forEach(el => { const v = el.value.trim(); if (v) vals.push(v); });
+  state.config[key] = vals; syncConfig("Saved.");
+}
+
+/* -------------------------------- Export ---------------------------------- */
+function csvCell(v) { const s = String(v == null ? "" : v); return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s; }
+function exportCSV() {
+  const cols = ["dateReviewed", "reviewer", "environment", "agent", "callLink", "timestamp", "category", "behavior", "humanWould", "callerImpact", "severity", "frequency", "status", "owner", "recommendedFix", "notes"];
+  const headers = ["Date Reviewed", "Reviewer Name", "Environment", "Agent Name", "Call Link", "Timestamp", "Issue Category", "Specific Behavior Observed", "What a Human Would Have Done", "Caller Impact", "Severity", "Frequency", "Status", "Owner", "Recommended Fix", "Notes"];
+  const list = activeTab === "tracker" ? sortEntries(applyFilters(state.entries)) : state.entries;
+  const lines = [headers.join(",")]; list.forEach(x => lines.push(cols.map(c => csvCell(x[c])).join(",")));
+  download("ai_human_quality_tracker_" + todayISO() + ".csv", lines.join("\n"), "text/csv");
+  toast("Exported " + list.length + " rows.");
+}
+function exportJSON() { download("ai_human_quality_tracker_backup_" + todayISO() + ".json", JSON.stringify({ entries: state.entries, patterns: state.patterns, fixes: state.fixes, config: state.config }, null, 2), "application/json"); }
+function importJSON(ev) {
+  const file = ev.target.files[0]; if (!file) return;
+  const r = new FileReader();
+  r.onload = async () => {
+    let p; try { p = JSON.parse(String(r.result)); } catch { toast("Invalid JSON file."); return; }
+    if (!confirm("Import will ADD or UPDATE entries for the whole team. Continue?")) return;
+    try {
+      if (p.config && typeof p.config === "object") { state.config = normalizeConfig(p.config); await persistConfig(); }
+      for (const kind of ["entries", "patterns", "fixes"]) {
+        for (const it of (p[kind] || [])) { if (!it.id) it.id = uid(); await putItem(kind, it); }
+      }
+      render(); toast("Import complete.");
+    } catch (e) { if (e.message !== "unauthorized") toast("Import failed: " + e.message); }
+  };
+  r.readAsText(file);
+}
+function download(name, content, type) {
+  const blob = new Blob([content], { type }); const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob); a.download = name; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+}
+
+/* ----------------------------- Sample data -------------------------------- */
+async function loadSampleData() {
+  if (state.entries.length && !confirm("Add sample entries to the shared database?")) return;
+  const samples = [
+    { dateReviewed: "2026-06-24", reviewer: "Jordan P.", environment: "PROD", agent: "Scheduling Agent", callLink: "https://app.phonely.ai/call-history/sample1", timestamp: "1:17", category: "Variable and Data Capture", behavior: "Caller gave 5 digits but the agent said it only heard 4 and re-asked.", humanWould: "Read back the full number to confirm rather than miscounting.", callerImpact: "Caller had to repeat info, sounded robotic.", severity: "Critical", frequency: "Occasional", status: "Open", owner: "Unassigned", recommendedFix: "Confirm digit count and read back before validating.", notes: "State Transitioning issue." },
+    { dateReviewed: "2026-06-24", reviewer: "Jordan P.", environment: "PROD", agent: "Intake Agent", callLink: "https://app.phonely.ai/call-history/sample2", timestamp: "2:38", category: "Listening and Comprehension", behavior: "Agent kept re-asking for the address and email already provided.", humanWould: "Acknowledge the info given and move to the next step.", callerImpact: "Caller frustrated, repeated themselves 4 times.", severity: "Major", frequency: "Frequent", status: "In Progress", owner: "Unassigned", recommendedFix: "Detect already-captured fields before prompting.", notes: "Stuck in Collect block." },
+    { dateReviewed: "2026-06-23", reviewer: "Sam K.", environment: "ENTERPRISE", agent: "Front Desk Agent", callLink: "https://enterprise.phonely.ai/call-history/sample3", timestamp: "2:39", category: "Transfer and Escalation", behavior: "Delivered an incomplete transfer message before handing off.", humanWould: "Give a clear, warm transfer explanation to the caller.", callerImpact: "Caller confused about what was happening.", severity: "Major", frequency: "Occasional", status: "Monitoring", owner: "Unassigned", recommendedFix: "Use full transfer script with reason and next step.", notes: "" },
+    { dateReviewed: "2026-06-23", reviewer: "Sam K.", environment: "CANARY", agent: "Scheduling Agent", callLink: "https://app.phonely.ai/call-history/sample4", timestamp: "2:56", category: "Hallucination or Assumption", behavior: "Agent asked for best contact number on a block where it should not.", humanWould: "Follow the workflow order and not invent extra questions.", callerImpact: "Call felt off-script and unnatural.", severity: "Minor", frequency: "One-off", status: "Resolved", owner: "Unassigned", recommendedFix: "Enforce block-level field scoping.", notes: "" },
+  ];
+  toast("Loading sample data…");
+  try {
+    for (const s of samples) await putItem("entries", Object.assign({ id: uid(), createdAt: nowISO(), updatedAt: nowISO() }, s));
+    if (!state.patterns.length) await putItem("patterns", { id: uid(), title: "Agent re-asks for data already given", category: "Listening and Comprehension", description: "Across multiple PROD calls the agent loops on collected fields (address, email, phone).", status: "In Progress" });
+    if (!state.fixes.length) await putItem("fixes", { id: uid(), category: "Listening and Comprehension", title: "Track captured fields before prompting", fix: "Maintain a captured-fields map and skip prompts for values already stored and confirmed.", priority: "Major", owner: "Unassigned", status: "In Progress" });
+    render(); toast("Sample data loaded.");
+  } catch (e) { if (e.message !== "unauthorized") toast("Failed: " + e.message); }
+}
+
+/* -------------------------------- Bootstrap ------------------------------- */
+async function boot() {
+  document.getElementById("app").innerHTML = `<div class="loading">Loading…</div>`;
+  try {
+    await loadData();
+    mountShell();
+    render();
+  } catch (e) {
+    if (e.message === "unauthorized") return;
+    document.getElementById("app").innerHTML = `<div class="loading">Could not load data.<br><br>${esc(e.message)}<br><br><button onclick="location.reload()">Retry</button></div>`;
+  }
+}
+document.addEventListener("keydown", e => { if (e.key === "Escape") closeModal(); });
+document.getElementById("modalRoot").addEventListener("click", e => { if (e.target.id === "overlay") closeModal(); });
+window.addEventListener("focus", () => { if (pass && !document.getElementById("overlay")) refresh(); });
+
+// expose handlers used by inline onclick
+Object.assign(window, { openEntryModal, saveEntry, deleteEntry, closeModal, openPatternModal, savePattern, deletePattern, openFixModal, saveFix, deleteFix, addCategory, removeCategory, saveCategories, addListItem, removeListItem, saveList, exportCSV, exportJSON, importJSON, loadSampleData });
+
+if (pass) boot(); else renderLogin();
+</script>
+</body>
+</html>

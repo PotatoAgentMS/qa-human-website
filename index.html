@@ -106,6 +106,36 @@
   .login-card p { color: var(--muted); margin: 0 0 18px; font-size: 13px; }
   .login-err { color: var(--bad); font-size: 12.5px; margin-top: 10px; min-height: 16px; }
   .loading { text-align: center; padding: 80px 16px; color: var(--muted); }
+  /* QA Bible (knowledge base) */
+  .kb-toolbar { display: flex; gap: 10px; align-items: center; margin-bottom: 16px; flex-wrap: wrap; }
+  .kb-search { max-width: 440px; }
+  .kb-wrap { display: flex; gap: 18px; align-items: flex-start; }
+  .kb-side { width: 244px; flex: 0 0 244px; }
+  .kb-side-title { font-size: 11px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); font-weight: 700; margin: 2px 0 8px; }
+  .kb-nav-item { padding: 8px 10px; border-radius: 8px; cursor: pointer; display: flex; align-items: center; gap: 8px; margin-bottom: 4px; border: 1px solid transparent; }
+  .kb-nav-item:hover { background: #f0f3fa; }
+  .kb-nav-item.active { background: var(--accent-soft); border-color: #d6def9; }
+  .kb-nav-item .t { font-weight: 600; font-size: 13px; }
+  .kb-main { flex: 1; min-width: 0; }
+  .kb-sec-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 4px; }
+  .kb-card { border: 1px solid var(--line); border-radius: 10px; margin-bottom: 10px; background: #fff; overflow: hidden; }
+  .kb-card-head { display: flex; align-items: center; gap: 8px; padding: 11px 13px; cursor: pointer; }
+  .kb-card-head:hover { background: #fafbff; }
+  .kb-chev { color: var(--muted); font-size: 11px; width: 10px; flex: 0 0 10px; }
+  .kb-card-title { font-weight: 600; }
+  .kb-card-body { padding: 6px 14px 14px 33px; border-top: 1px solid var(--line); }
+  .kb-card-actions { margin-top: 10px; }
+  .kb-updated { font-size: 11px; color: var(--muted); white-space: nowrap; }
+  .kb-group-title { font-size: 12px; text-transform: uppercase; letter-spacing: .04em; color: var(--accent); font-weight: 700; margin: 16px 0 8px; }
+  .kb-head-controls { display: flex; gap: 6px; }
+  .kb-tag { font-size: 11px; background: #eef1f7; color: var(--muted); border-radius: 999px; padding: 2px 8px; white-space: nowrap; }
+  .kb-ul { margin: 6px 0; padding-left: 20px; }
+  .kb-ul li { margin: 2px 0; }
+  .kb-p { margin: 7px 0; }
+  .kb-sub { font-weight: 700; margin: 10px 0 2px; }
+  .kb-sp { height: 8px; }
+  .kb-result-sec { font-size: 11px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); font-weight: 700; margin: 12px 0 4px; }
+  @media (max-width: 760px) { .kb-wrap { flex-direction: column; } .kb-side { width: 100%; flex: 1 1 auto; } }
 </style>
 </head>
 <body>
@@ -125,6 +155,178 @@ let sortKey = "dateReviewed";
 let sortDir = -1;
 let busy = false;
 
+const BIBLE_NOW = "2026-06-26T00:00:00.000Z";
+function bslug(t) { return String(t).toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, ""); }
+function bdef(group, title, body, order) { return { id: "bd_" + bslug(title), title, body, group, order, lastUpdated: BIBLE_NOW, updatedBy: "QA Team" }; }
+function bitem(title, body, order) { return { id: "bi_" + bslug(title), title, body, order, lastUpdated: BIBLE_NOW, updatedBy: "QA Team" }; }
+
+const DEFAULT_BIBLE = {
+  sections: [
+    {
+      id: "sec_blocks", title: "Block Definitions", tag: "Workflow Blocks", kind: "definitions", order: 0,
+      lastUpdated: BIBLE_NOW, updatedBy: "QA Team",
+      intro: "Definitions of the workflow blocks used to build call flows, grouped by when they run.",
+      items: [
+        bdef("Core Blocks", "Start Flow", `The entry point. Every workflow has one. It defines when a flow triggers, how it's entered (primary vs. conditional), and on which channels (inbound, outbound, SMS). It doesn't speak to the caller.`, 0),
+        bdef("Core Blocks", "Talk", `The "prompt" block. You give the AI instructions/objectives and it has a natural back-and-forth conversation, gathering info and moving on when exit conditions are met. The workhorse for conversational steps.`, 1),
+        bdef("Core Blocks", "Collect", `A mini-form inside the conversation. Gathers multiple pieces of info in sequence (name, email, phone, etc.) conversationally, storing each as a variable. Cleaner than stacking multiple ask blocks.`, 2),
+        bdef("Core Blocks", "Ask Exactly", `Asks one precise, required question at an exact moment with strict validation. Admin-only. Use sparingly — overuse makes the flow feel like a rigid IVR.`, 3),
+        bdef("Core Blocks", "Filter", `The routing-logic layer. Routes the call based on cases (where the call can go) and conditions (when it's allowed to go there). Evaluates top-to-bottom, first match wins, else = fallback.`, 4),
+        bdef("Core Blocks", "Time Filter", `A time-of-day gatekeeper. Routes down different paths (True/False) based on whether the current time falls inside defined ranges — business hours, lunch breaks, after-hours.`, 5),
+        bdef("Core Blocks", "End Call", `Gracefully ends the call with a closing message. Can also generate a call summary, set outcome tags for analytics, send a follow-up SMS, and trigger post-call actions.`, 6),
+        bdef("Pre-Call Actions (run after answer, before the agent speaks)", "Pre-Call API Request", `Calls external APIs the moment a call starts to load customer data, verify callers, or prep variables before the greeting.`, 7),
+        bdef("Pre-Call Actions (run after answer, before the agent speaks)", "Pre-Call Code", `Runs custom Python before the conversation to transform data, evaluate conditions, or generate variables for the greeting/routing.`, 8),
+        bdef("Pre-Call Actions (run after answer, before the agent speaks)", "Pre-Call Webhook", `Lets external systems (CRMs, IVRs) push preloaded caller context into Phonely so the agent starts fully aware — skips questions, routes instantly.`, 9),
+        bdef("Pre-Call Actions (run after answer, before the agent speaks)", "Pre-Call Filter", `Branches the call into the correct Start Flow path based on conditions (caller metadata, prior pre-call outputs) before the agent speaks.`, 10),
+        bdef("Pre-Call Actions (run after answer, before the agent speaks)", "Pre-Call End Call", `Ends a call early, before the main workflow, when a caller isn't eligible or shouldn't continue (often paired with a pre-call filter/code/API check).`, 11),
+        bdef("Live Call Actions (run in real time, mid-conversation)", "API Request", `Real-time HTTP calls to external systems during the call: create CRM records, check availability, trigger webhooks/automations (Zapier, Make, Slack).`, 12),
+        bdef("Live Call Actions (run in real time, mid-conversation)", "Run Code", `Executes Python mid-call as a logic layer between conversational steps — compute values, make complex conditional decisions.`, 13),
+        bdef("Live Call Actions (run in real time, mid-conversation)", "Transfer Call", `Hands a live call off to a person/department/fallback. Supports warm + cold transfers, AI triage, multi-destination failover/retry, and custom hold experiences — all in one block.`, 14),
+        bdef("Live Call Actions (run in real time, mid-conversation)", "Transfer Flow", `Routes the caller from the current flow to one or more sub-flows without ending the call. Seamless context switch behind the scenes; supports multiple destinations and global transition conditions.`, 15),
+        bdef("Live Call Actions (run in real time, mid-conversation)", "Collect Payments", `Securely collects/processes card payments mid-call (keypad or spoken). Fully PCI-compliant, isolated environment, returns to the flow after. Admin-only.`, 16),
+        bdef("Live Call Actions (run in real time, mid-conversation)", "Send SMS", `Sends a text from Phonely's number (or your verified number) to the caller mid-call — confirmations, links, reference numbers, next steps. Supports variables.`, 17),
+        bdef("Live Call Actions (run in real time, mid-conversation)", "Send Email", `Sends an automated email during the call (or post-call) — follow-ups, lead notifications, call details to your team. Supports variables and HTML.`, 18),
+        bdef("Post-Call Actions (run after the call ends)", "Post-Call Overview", `Not a block itself, but the category: automations that fire after the call with access to rich data (AI summary, full transcript, call URL, analytics, all variables). Can be placed on the Start node to fire even if the caller doesn't finish.`, 19),
+        bdef("Post-Call Actions (run after the call ends)", "Post-Call Send Email", `Sends an email after the call — summaries, confirmations, receipts, next steps.`, 20),
+        bdef("Post-Call Actions (run after the call ends)", "Send Call Data", `Pushes call details (caller info, duration, outcomes, workflow data) to an external system via webhook — for CRMs, dashboards, Zapier/custom APIs.`, 21),
+        bdef("Post-Call Actions (run after the call ends)", "SMS & Email Notifications", `Sends call summaries/notifications to your team (not the caller) after a call ends.`, 22),
+        bdef("Post-Call Actions (run after the call ends)", "Connect to Make", `Pushes call data to Make (Integromat) via webhook to trigger scenarios and receive structured responses back.`, 23),
+        bdef("Post-Call Actions (run after the call ends)", "Connect to Google Drive", `Auto-uploads call assets (recordings, transcripts) to a connected Google Drive after the call.`, 24),
+        bdef("Post-Call Actions (run after the call ends)", "Google Sheets – Add a Row", `Inserts collected call data as a new row in a Google Sheet (leads, tickets, callbacks, survey responses).`, 25),
+        bdef("Post-Call Actions (run after the call ends)", "Redial", `Retries an unanswered/voicemail/failed call after a set delay, or moves the contact to another campaign for follow-up.`, 26),
+        bdef("Post-Call Actions (run after the call ends)", "Campaign", `Adds the caller to a specific outbound campaign's queue once they hit this point — so missed calls, interested leads, or incomplete forms get a follow-up touchpoint.`, 27),
+      ],
+    },
+    {
+      id: "sec_howto", title: "How to Write a Proper QA Report", tag: "Reports", kind: "guide", order: 1,
+      lastUpdated: BIBLE_NOW, updatedBy: "QA Team",
+      intro: "QA reports must be specific, actionable, and tied to actual call behavior. A report should not just list outcomes. It should explain what happened, where the caller dropped off, what block or workflow area was involved, and what issue may need review.",
+      items: [
+        bitem("Format 1: Daily Call Review Summary", `Use this format when summarizing the biggest trends from a day of reviewed calls.
+
+Required structure:
+
+[Date] Call Review Summary
+
+Biggest Drop-Off Points:
+
+Customer Ended Calls
+• List the main reasons callers ended the call.
+• Include categories such as greeting hangup, abandoned call, not ready to book yet, user went unresponsive during qualification, unknown disqualification after caller path prompt, etc.
+
+Max Duration Reached
+• List calls where the agent or caller could not progress.
+• Include whether repeated prompts, poor audio, transcription issues, or workflow loops contributed.
+
+Phonely Ended Calls
+• List cases where the system ended the call.
+• Include whether the caller qualified, failed qualification, or was incorrectly routed.
+
+Errors / Feedback / Observations:
+• Explain what patterns QA noticed.
+• Mention repeated issues across calls.
+• Mention possible workflow, transcription, logic, transfer, or qualification issues.
+• Include the impact of the issue.
+• Example: "Poor audio quality caused repeated prompts and prevented the conversation from progressing."
+• Example: "Qualified – No Buyer Found remains a contributor to lost opportunities despite successful qualification."`, 0),
+        bitem("Format 2: Block-Based Drop-Off Report", `Use this format when analyzing where calls disconnected by workflow block.
+
+Required structure:
+
+QA Report [Date]
+
+The highest volume of drop-offs occurred during [block name] with [number] calls
+
+[Block / Outcome Name] ([count])
+• Explain what happened.
+• Explain what caller behavior caused the drop-off.
+• Explain what agent behavior or workflow behavior contributed.
+• Include examples if available.
+
+Example categories:
+• No response / silence
+• Early drop / no engagement
+• Misrouted / wrong provider or service
+• Disconnection during eligibility questioning
+• Distrust / legitimacy concern
+• Repetition friction during personal information capture
+• Preference for live agent / AI aversion
+• Disconnection due to transfer wait time
+
+Comparison Table:
+Include a table comparing today's outcomes against the previous day when data is available.
+
+Columns: Outcome | Previous Date Count | Previous Date % | Current Date Count | Current Date % | Difference
+
+The report should clearly show whether outcomes improved, worsened, or stayed stable.`, 1),
+      ],
+    },
+    {
+      id: "sec_examples", title: "Good QA Report Examples", tag: "Examples", kind: "examples", order: 2,
+      lastUpdated: BIBLE_NOW, updatedBy: "QA Team",
+      intro: "Reference examples of well-written QA reports. Use the Copy button to reuse a format.",
+      items: [
+        bitem("Example 1: Daily Call Review Summary", `6/25/2026 Call Review Summary
+
+Biggest Drop-Off Points:
+
+Customer Ended Calls
+• Greeting Hangup
+• Abandoned Call
+• Not Ready to Book Yet
+• User Went Unresponsive During Qualification
+• Unknown Disqualification After Caller Path Prompt
+
+Max Duration Reached
+• Poor audio quality caused repeated prompts and inability to progress the conversation
+• User responses were transcribed incorrectly, resulting in repeated prompts
+
+Phonely Ended Calls
+• Qualified - No Buyer Found
+
+Errors / Feedback / Observations:
+• Poor audio quality was a significant contributor to call failures, causing repeated prompts and resulting in 3 calls reaching the maximum duration limit.
+• One call reached maximum duration because user responses were repeatedly transcribed incorrectly, preventing the conversation from progressing.
+• PPC Pest Control - call was unexpectedly ended/disqualified immediately after the caller path prompt, indicating a potential flow or qualification logic issue that should be investigated.
+• "Qualified – No Buyer Found" remains a contributor to lost opportunities despite successful qualification.`, 0),
+        bitem("Example 2: Block-Based Drop-Off Report", `QA Report June 24
+
+The highest volume of drop-offs occurred during Q1 block with 11 calls
+
+No response / silence (5)
+• Users were unresponsive, leading to silence timeouts or disconnections after silence checks.
+
+Early drop / no engagement (2)
+• Users disconnected immediately after the greeting without engaging in the conversation.
+
+Misrouted / wrong provider or service (3)
+• Users intended to reach Medicaid or a specific contact and disconnected after realizing the mismatch.
+
+Disconnection during eligibility questioning (1)
+• Users showed interest but disengaged when asked about Medicare Part A and B.
+
+3 calls disconnected during T1 block
+
+Distrust / legitimacy concern (2)
+• Users expressed skepticism or questioned legitimacy when asked for full name and disconnected when the agent could not directly answer eligibility questions.
+
+Repetition friction during personal information capture (1)
+• Agent had difficulty capturing DOB and repeatedly asked for it, leading to user frustration and disconnection.
+
+1 call disconnected during Q2 block
+
+Preference for live agent / AI aversion (1)
+• User became frustrated with the review process and explicitly requested to speak with a live person, showing reluctance to continue interacting with an AI agent.
+
+2 calls disconnected during Transfer Attempt 1 block
+
+Disconnection due to transfer wait time (2)
+• Users disconnected while the agent was in the process of transferring the call, likely due to impatience or perceived delay.`, 1),
+      ],
+    },
+  ],
+};
+
 const DEFAULT_CONFIG = {
   categories: [
     { name: "Conversation Flow", description: "The agent sounds scripted, resets the conversation, repeats itself, or does not move naturally through the call." },
@@ -143,6 +345,7 @@ const DEFAULT_CONFIG = {
   owners: ["Unassigned"],
   environments: ["CANARY", "ENTERPRISE", "PROD"],
   frequencies: ["One-off", "Occasional", "Frequent", "Every call"],
+  bible: DEFAULT_BIBLE,
 };
 
 /* ------------------------------- Utilities ------------------------------- */
@@ -188,6 +391,7 @@ function normalizeConfig(cfg) {
     owners: c.owners || DEFAULT_CONFIG.owners,
     environments: c.environments || DEFAULT_CONFIG.environments,
     frequencies: c.frequencies || DEFAULT_CONFIG.frequencies,
+    bible: (c.bible && Array.isArray(c.bible.sections)) ? c.bible : DEFAULT_CONFIG.bible,
   };
 }
 async function loadData() {
@@ -238,6 +442,7 @@ const TABS = [
   { key: "tracker", label: "Tracker" },
   { key: "patterns", label: "Recurring Patterns" },
   { key: "fixes", label: "Recommended Fixes" },
+  { key: "bible", label: "QA Bible" },
   { key: "settings", label: "Settings" },
 ];
 function mountShell() {
@@ -281,8 +486,10 @@ function render() {
   else if (activeTab === "tracker") view.innerHTML = viewTracker();
   else if (activeTab === "patterns") view.innerHTML = viewPatterns();
   else if (activeTab === "fixes") view.innerHTML = viewFixes();
+  else if (activeTab === "bible") view.innerHTML = viewBible();
   else if (activeTab === "settings") view.innerHTML = viewSettings();
   if (activeTab === "tracker") bindTrackerFilters();
+  if (activeTab === "bible") bindBibleControls();
 }
 function countBy(items, keyFn) {
   const m = new Map();
@@ -668,6 +875,236 @@ async function loadSampleData() {
   } catch (e) { if (e.message !== "unauthorized") toast("Failed: " + e.message); }
 }
 
+/* -------------------------------- QA Bible -------------------------------- */
+let bibleActiveId = null, bibleEdit = false, bibleQuery = "", bibleExpanded = {}, _pendingConfirm = null;
+
+function bibleData() { const b = state.config.bible; return (b && Array.isArray(b.sections)) ? b : { sections: [] }; }
+function bibleSections() { return [...bibleData().sections].sort((a, b) => (a.order || 0) - (b.order || 0)); }
+function bibleItems(sec) { return [...(sec.items || [])].sort((a, b) => (a.order || 0) - (b.order || 0)); }
+function touchSection(sec) { if (sec) sec.lastUpdated = nowISO(); }
+function fmtDate(iso) { if (!iso) return ""; const d = new Date(iso); if (isNaN(d)) return ""; return d.toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" }); }
+
+function renderRich(text) {
+  const lines = String(text == null ? "" : text).split("\n");
+  let html = "", inList = false;
+  const closeList = () => { if (inList) { html += "</ul>"; inList = false; } };
+  for (const raw of lines) {
+    const line = raw.trim();
+    if (line.startsWith("•") || line.startsWith("- ")) {
+      if (!inList) { html += "<ul class='kb-ul'>"; inList = true; }
+      html += "<li>" + esc(line.replace(/^•\s?/, "").replace(/^- /, "")) + "</li>";
+    } else if (!line) {
+      closeList(); html += "<div class='kb-sp'></div>";
+    } else if (/:$/.test(line)) {
+      closeList(); html += "<div class='kb-sub'>" + esc(line) + "</div>";
+    } else {
+      closeList(); html += "<p class='kb-p'>" + esc(line) + "</p>";
+    }
+  }
+  closeList();
+  return html || "<span class='inline-note'>—</span>";
+}
+
+function viewBible() {
+  const secs = bibleSections();
+  if (bibleActiveId == null || !secs.find(s => s.id === bibleActiveId)) bibleActiveId = secs.length ? secs[0].id : null;
+  const q = bibleQuery.trim().toLowerCase();
+  const side = `<div class="kb-side">
+      <div class="kb-side-title">Sections</div>
+      ${secs.map((s, idx) => `<div class="kb-nav-item ${!q && s.id === bibleActiveId ? "active" : ""}" onclick="selectBibleSection('${s.id}')">
+          <span class="t">${esc(s.title)}</span>
+          ${s.tag ? `<span class="kb-tag">${esc(s.tag)}</span>` : ""}
+          ${bibleEdit ? `<span style="flex:1"></span>
+            <button class="small" title="Move up" onclick="event.stopPropagation();moveBibleSection('${s.id}',-1)" ${idx === 0 ? "disabled" : ""}>↑</button>
+            <button class="small" title="Move down" onclick="event.stopPropagation();moveBibleSection('${s.id}',1)" ${idx === secs.length - 1 ? "disabled" : ""}>↓</button>` : ""}
+        </div>`).join("")}
+      ${bibleEdit ? `<button class="primary" style="width:100%;margin-top:8px" onclick="openBibleSectionModal()">+ Add Section</button>` : ""}
+    </div>`;
+  let main;
+  if (q) main = bibleSearchResults(q);
+  else { const sec = secs.find(s => s.id === bibleActiveId); main = sec ? bibleSectionView(sec) : `<div class="empty"><div class="big">No sections yet</div>${bibleEdit ? "<div>Use “+ Add Section”.</div>" : ""}</div>`; }
+  return `<h2 class="view-title">QA Bible</h2>
+    <p class="view-sub">Internal QA knowledge base: block definitions, how to write reports, and report examples.</p>
+    <div class="kb-toolbar">
+      <input type="text" id="bibleSearch" class="kb-search" placeholder="Search blocks, sections, keywords…" value="${esc(bibleQuery)}">
+      <div style="flex:1"></div>
+      <button class="${bibleEdit ? "primary" : ""}" onclick="toggleBibleEdit()">${bibleEdit ? "✓ Edit Mode: On" : "✎ Edit Mode"}</button>
+    </div>
+    <div class="kb-wrap">${side}<div class="kb-main">${main}</div></div>`;
+}
+
+function bibleSectionView(sec) {
+  const items = bibleItems(sec);
+  const head = `<div class="kb-sec-head">
+      <h3 style="margin:0">${esc(sec.title)}</h3>
+      ${sec.tag ? `<span class="kb-tag">${esc(sec.tag)}</span>` : ""}
+      <span class="kb-updated">Last updated ${fmtDate(sec.lastUpdated)}${sec.updatedBy ? (" · " + esc(sec.updatedBy)) : ""}</span>
+      <div style="flex:1"></div>
+      ${bibleEdit ? `<button class="small" onclick="openBibleSectionModal('${sec.id}')">Edit section</button>
+        <button class="small danger" onclick="confirmDeleteBibleSection('${sec.id}')">Delete section</button>
+        <button class="small primary" onclick="openBibleItemModal('${sec.id}')">+ Add ${sec.kind === "definitions" ? "definition" : "item"}</button>` : ""}
+    </div>
+    ${sec.intro ? `<p class="view-sub" style="margin-top:4px">${esc(sec.intro)}</p>` : ""}`;
+  let bodyHtml;
+  if (!items.length) bodyHtml = `<div class="inline-note">No content yet.${bibleEdit ? " Use the “+ Add” button above." : ""}</div>`;
+  else if (sec.kind === "definitions") {
+    const groups = [];
+    items.forEach(it => { const g = it.group || "General"; let grp = groups.find(x => x.name === g); if (!grp) { grp = { name: g, items: [] }; groups.push(grp); } grp.items.push(it); });
+    bodyHtml = groups.map(g => `<div class="kb-group-title">${esc(g.name)}</div>${g.items.map(it => bibleItemCard(sec, it)).join("")}`).join("");
+  } else bodyHtml = items.map(it => bibleItemCard(sec, it)).join("");
+  return head + `<div style="margin-top:6px">${bodyHtml}</div>`;
+}
+
+function bibleItemCard(sec, it) {
+  const open = !!bibleExpanded[it.id] || !!bibleQuery.trim();
+  const ctrls = bibleEdit ? `
+      <button class="small" title="Move up" onclick="event.stopPropagation();moveBibleItem('${sec.id}','${it.id}',-1)">↑</button>
+      <button class="small" title="Move down" onclick="event.stopPropagation();moveBibleItem('${sec.id}','${it.id}',1)">↓</button>
+      <button class="small" onclick="event.stopPropagation();openBibleItemModal('${sec.id}','${it.id}')">Edit</button>
+      <button class="small danger" onclick="event.stopPropagation();confirmDeleteBibleItem('${sec.id}','${it.id}')">Delete</button>` : "";
+  return `<div class="kb-card">
+      <div class="kb-card-head" onclick="toggleBible('${it.id}')">
+        <span class="kb-chev">${open ? "▾" : "▸"}</span>
+        <span class="kb-card-title">${esc(it.title)}</span>
+        <div style="flex:1"></div>
+        ${it.lastUpdated ? `<span class="kb-updated">${fmtDate(it.lastUpdated)}${it.updatedBy ? (" · " + esc(it.updatedBy)) : ""}</span>` : ""}
+        ${ctrls ? `<span class="kb-head-controls">${ctrls}</span>` : ""}
+      </div>
+      ${open ? `<div class="kb-card-body">${renderRich(it.body)}<div class="kb-card-actions"><button class="small" onclick="copyBible('${it.id}')">Copy</button></div></div>` : ""}
+    </div>`;
+}
+
+function bibleSearchResults(q) {
+  const out = [];
+  bibleSections().forEach(s => bibleItems(s).forEach(it => {
+    const hay = [it.title, it.body, it.group, s.title, s.tag].filter(Boolean).join(" ").toLowerCase();
+    if (hay.includes(q)) out.push({ s, it });
+  }));
+  if (!out.length) return `<div class="empty"><div class="big">No matches for “${esc(bibleQuery)}”</div><div>Try a block name or keyword.</div></div>`;
+  return `<div class="kb-sec-head"><h3 style="margin:0">Search results</h3><span class="kb-tag">${out.length} match${out.length === 1 ? "" : "es"}</span></div>` +
+    out.map(({ s, it }) => `<div class="kb-result-sec">${esc(s.title)}</div>${bibleItemCard(s, it)}`).join("");
+}
+
+function bindBibleControls() {
+  const s = document.getElementById("bibleSearch");
+  if (s) s.addEventListener("input", () => {
+    bibleQuery = s.value; render();
+    const n = document.getElementById("bibleSearch"); if (n) { n.focus(); n.setSelectionRange(n.value.length, n.value.length); }
+  });
+}
+
+function selectBibleSection(id) { bibleActiveId = id; bibleQuery = ""; render(); }
+function toggleBible(id) { bibleExpanded[id] = !bibleExpanded[id]; render(); }
+function toggleBibleEdit() { bibleEdit = !bibleEdit; render(); toast(bibleEdit ? "Edit mode on." : "Edit mode off."); }
+function copyBible(id) {
+  let body = ""; bibleSections().forEach(s => { const it = (s.items || []).find(x => x.id === id); if (it) body = it.body; });
+  if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(body).then(() => toast("Copied to clipboard.")).catch(() => toast("Copy failed."));
+  else toast("Copy not supported in this browser.");
+}
+
+function moveBibleSection(id, dir) {
+  const secs = bibleSections(); const i = secs.findIndex(s => s.id === id); const j = i + dir;
+  if (i < 0 || j < 0 || j >= secs.length) return;
+  const a = secs[i], b = secs[j], ao = a.order || 0, bo = b.order || 0; a.order = bo; b.order = ao;
+  syncConfig("Order updated.");
+}
+function moveBibleItem(sectionId, itemId, dir) {
+  const sec = bibleData().sections.find(s => s.id === sectionId); if (!sec) return;
+  let list = bibleItems(sec);
+  if (sec.kind === "definitions") { const grp = (list.find(x => x.id === itemId) || {}).group || ""; list = list.filter(x => (x.group || "") === grp); }
+  const i = list.findIndex(x => x.id === itemId); const j = i + dir;
+  if (i < 0 || j < 0 || j >= list.length) return;
+  const a = list[i], b = list[j], ao = a.order || 0, bo = b.order || 0; a.order = bo; b.order = ao;
+  touchSection(sec); syncConfig("Order updated.");
+}
+
+function openBibleSectionModal(id) {
+  const sec = id ? bibleData().sections.find(s => s.id === id) : { title: "", tag: "", intro: "", kind: "guide", updatedBy: "" };
+  if (!sec) return;
+  const kinds = [["guide", "Text / Guide"], ["definitions", "Definitions (grouped)"], ["examples", "Examples"]];
+  document.getElementById("modalRoot").innerHTML = `<div class="overlay" id="overlay"><div class="modal" style="max-width:640px">
+      <div class="modal-head"><h3>${id ? "Edit" : "Add"} Section</h3><div style="flex:1"></div><button class="ghost" onclick="closeModal()">✕</button></div>
+      <div class="modal-body"><div class="form-grid">
+        <label class="field span2"><span>Title</span><input id="bs_title" value="${esc(sec.title)}" placeholder="e.g. Block Definitions"></label>
+        <label class="field"><span>Tag</span><input id="bs_tag" value="${esc(sec.tag || "")}" placeholder="e.g. Reports"></label>
+        <label class="field span3"><span>Type</span><select id="bs_kind">${kinds.map(([v, l]) => `<option value="${v}"${sec.kind === v ? " selected" : ""}>${l}</option>`).join("")}</select></label>
+        <label class="field span3"><span>Intro (optional)</span><textarea id="bs_intro" placeholder="Short description shown under the title">${esc(sec.intro || "")}</textarea></label>
+        <label class="field span3"><span>Updated by (optional)</span><input id="bs_by" value="${esc(sec.updatedBy || "")}" placeholder="Your name or initials"></label>
+      </div></div>
+      <div class="modal-foot"><button onclick="closeModal()">Cancel</button><button class="primary" id="bsSaveBtn" onclick="saveBibleSection(${id ? "'" + id + "'" : "null"})">Save</button></div>
+    </div></div>`;
+}
+async function saveBibleSection(id) {
+  const g = k => (document.getElementById("bs_" + k) || {}).value;
+  const title = (g("title") || "").trim(); if (!title) { toast("Section needs a title."); return; }
+  if (!state.config.bible || !Array.isArray(state.config.bible.sections)) state.config.bible = { sections: [] };
+  const data = state.config.bible;
+  if (id) { const s = data.sections.find(x => x.id === id); if (s) { s.title = title; s.tag = (g("tag") || "").trim(); s.kind = g("kind"); s.intro = (g("intro") || "").trim(); s.updatedBy = (g("by") || "").trim(); s.lastUpdated = nowISO(); } }
+  else {
+    const order = data.sections.length ? Math.max(...data.sections.map(s => s.order || 0)) + 1 : 0;
+    const ns = { id: "sec_" + uid(), title, tag: (g("tag") || "").trim(), kind: g("kind"), intro: (g("intro") || "").trim(), updatedBy: (g("by") || "").trim(), order, lastUpdated: nowISO(), items: [] };
+    data.sections.push(ns); bibleActiveId = ns.id;
+  }
+  closeModal(); await syncConfig("Section saved.");
+}
+
+function openBibleItemModal(sectionId, id) {
+  const sec = bibleData().sections.find(s => s.id === sectionId); if (!sec) return;
+  const it = id ? (sec.items || []).find(x => x.id === id) : { title: "", body: "", group: "", updatedBy: "" };
+  if (!it) return;
+  const isDef = sec.kind === "definitions";
+  const groups = [...new Set((sec.items || []).map(x => x.group).filter(Boolean))];
+  document.getElementById("modalRoot").innerHTML = `<div class="overlay" id="overlay"><div class="modal" style="max-width:720px">
+      <div class="modal-head"><h3>${id ? "Edit" : "Add"} ${isDef ? "Definition" : "Item"}</h3><div style="flex:1"></div><button class="ghost" onclick="closeModal()">✕</button></div>
+      <div class="modal-body"><div class="form-grid">
+        <label class="field ${isDef ? "span2" : "span3"}"><span>${isDef ? "Block name" : "Title"}</span><input id="bi_title" value="${esc(it.title)}" placeholder="${isDef ? "e.g. Start Flow" : "e.g. Format 1: Daily Call Review Summary"}"></label>
+        ${isDef ? `<label class="field"><span>Group</span><input id="bi_group" list="bi_groups" value="${esc(it.group || "")}" placeholder="e.g. Core Blocks"><datalist id="bi_groups">${groups.map(x => `<option value="${esc(x)}">`).join("")}</datalist></label>` : ""}
+        <label class="field span3"><span>Content</span><textarea id="bi_body" style="min-height:220px" placeholder="Use • or - at the start of a line for bullets. Blank lines separate paragraphs.">${esc(it.body)}</textarea>
+          <div class="hint">Tip: start a line with • or "- " for bullets. A line ending with ":" shows as a sub-heading.</div></label>
+        <label class="field span3"><span>Updated by (optional)</span><input id="bi_by" value="${esc(it.updatedBy || "")}" placeholder="Your name or initials"></label>
+      </div></div>
+      <div class="modal-foot"><button onclick="closeModal()">Cancel</button><button class="primary" id="biSaveBtn" onclick="saveBibleItem('${sectionId}',${id ? "'" + id + "'" : "null"})">Save</button></div>
+    </div></div>`;
+}
+async function saveBibleItem(sectionId, id) {
+  const sec = bibleData().sections.find(s => s.id === sectionId); if (!sec) return;
+  const g = k => (document.getElementById("bi_" + k) || {}).value;
+  const title = (g("title") || "").trim(); if (!title) { toast("Please enter a title."); return; }
+  if (!Array.isArray(sec.items)) sec.items = [];
+  if (id) { const it = sec.items.find(x => x.id === id); if (it) { it.title = title; it.body = g("body") || ""; if (sec.kind === "definitions") it.group = (g("group") || "").trim() || "General"; it.updatedBy = (g("by") || "").trim(); it.lastUpdated = nowISO(); } }
+  else {
+    const order = sec.items.length ? Math.max(...sec.items.map(x => x.order || 0)) + 1 : 0;
+    const ni = { id: (sec.kind === "definitions" ? "bd_" : "bi_") + uid(), title, body: g("body") || "", order, updatedBy: (g("by") || "").trim(), lastUpdated: nowISO() };
+    if (sec.kind === "definitions") ni.group = (g("group") || "").trim() || "General";
+    sec.items.push(ni); bibleExpanded[ni.id] = true;
+  }
+  touchSection(sec); closeModal(); await syncConfig("Saved.");
+}
+
+function openConfirmModal(message, fn) {
+  _pendingConfirm = fn;
+  document.getElementById("modalRoot").innerHTML = `<div class="overlay" id="overlay"><div class="modal" style="max-width:440px">
+      <div class="modal-head"><h3>Please confirm</h3><div style="flex:1"></div><button class="ghost" onclick="cancelConfirm()">✕</button></div>
+      <div class="modal-body"><p style="margin:0">${esc(message)}</p></div>
+      <div class="modal-foot"><button onclick="cancelConfirm()">Cancel</button><button class="danger" onclick="runConfirm()">Delete</button></div>
+    </div></div>`;
+}
+function cancelConfirm() { _pendingConfirm = null; closeModal(); }
+function runConfirm() { const f = _pendingConfirm; _pendingConfirm = null; closeModal(); if (f) f(); }
+function confirmDeleteBibleSection(id) { const s = bibleData().sections.find(x => x.id === id); openConfirmModal(`Delete the section “${s ? s.title : ""}” and all of its content? This cannot be undone.`, () => deleteBibleSection(id)); }
+function confirmDeleteBibleItem(sectionId, itemId) { const sec = bibleData().sections.find(s => s.id === sectionId); const it = sec ? (sec.items || []).find(x => x.id === itemId) : null; openConfirmModal(`Delete “${it ? it.title : ""}”? This cannot be undone.`, () => deleteBibleItem(sectionId, itemId)); }
+async function deleteBibleSection(id) {
+  if (!state.config.bible || !Array.isArray(state.config.bible.sections)) return;
+  state.config.bible.sections = state.config.bible.sections.filter(s => s.id !== id);
+  if (bibleActiveId === id) bibleActiveId = null;
+  await syncConfig("Section deleted.");
+}
+async function deleteBibleItem(sectionId, itemId) {
+  const sec = bibleData().sections.find(s => s.id === sectionId);
+  if (sec) { sec.items = (sec.items || []).filter(x => x.id !== itemId); touchSection(sec); }
+  await syncConfig("Deleted.");
+}
+
 /* -------------------------------- Bootstrap ------------------------------- */
 async function boot() {
   document.getElementById("app").innerHTML = `<div class="loading">Loading…</div>`;
@@ -685,7 +1122,8 @@ document.getElementById("modalRoot").addEventListener("click", e => { if (e.targ
 window.addEventListener("focus", () => { if (pass && !document.getElementById("overlay")) refresh(); });
 
 // expose handlers used by inline onclick
-Object.assign(window, { openEntryModal, saveEntry, deleteEntry, closeModal, openPatternModal, savePattern, deletePattern, openFixModal, saveFix, deleteFix, addCategory, removeCategory, saveCategories, addListItem, removeListItem, saveList, exportCSV, exportJSON, importJSON, loadSampleData });
+Object.assign(window, { openEntryModal, saveEntry, deleteEntry, closeModal, openPatternModal, savePattern, deletePattern, openFixModal, saveFix, deleteFix, addCategory, removeCategory, saveCategories, addListItem, removeListItem, saveList, exportCSV, exportJSON, importJSON, loadSampleData,
+  selectBibleSection, toggleBible, toggleBibleEdit, copyBible, moveBibleSection, moveBibleItem, openBibleSectionModal, saveBibleSection, openBibleItemModal, saveBibleItem, confirmDeleteBibleSection, confirmDeleteBibleItem, deleteBibleSection, deleteBibleItem, openConfirmModal, runConfirm, cancelConfirm });
 
 if (pass) boot(); else renderLogin();
 </script>

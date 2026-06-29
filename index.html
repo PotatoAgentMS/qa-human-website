@@ -159,6 +159,7 @@ let activeTab = "dashboard";
 let filters = { from: "", to: "", reviewer: "", agent: "", environment: "", category: "", severity: "", status: "", q: "" };
 let incFilters = { from: "", to: "", customer: "", category: "", source: "", status: "" };
 let modalCats = [];
+let modalPrompt = "";
 let sortKey = "dateReviewed";
 let sortDir = -1;
 let busy = false;
@@ -353,6 +354,7 @@ const DEFAULT_CONFIG = {
   owners: ["Unassigned"],
   environments: ["CANARY", "ENTERPRISE", "PROD"],
   frequencies: ["One-off", "Occasional", "Frequent", "Every call"],
+  promptVersions: [],
   bible: DEFAULT_BIBLE,
 };
 
@@ -409,6 +411,7 @@ function normalizeConfig(cfg) {
     owners: c.owners || DEFAULT_CONFIG.owners,
     environments: c.environments || DEFAULT_CONFIG.environments,
     frequencies: c.frequencies || DEFAULT_CONFIG.frequencies,
+    promptVersions: Array.isArray(c.promptVersions) ? c.promptVersions : DEFAULT_CONFIG.promptVersions,
     bible: (c.bible && Array.isArray(c.bible.sections)) ? c.bible : DEFAULT_CONFIG.bible,
   };
 }
@@ -571,6 +574,7 @@ const COLUMNS = [
   { key: "humanWould", label: "Human Would Have" }, { key: "callerImpact", label: "Caller Impact" }, { key: "severity", label: "Severity" },
   { key: "frequency", label: "Frequency" }, { key: "status", label: "Status" }, { key: "owner", label: "Owner" },
   { key: "timestamp", label: "Timestamp" }, { key: "callLink", label: "Call Link" },
+  { key: "promptVersion", label: "Prompt Version" },
 ];
 function applyFilters(list) {
   return list.filter(x => {
@@ -613,6 +617,7 @@ function viewTracker() {
       <td><span class="chip ${sevClass(x.severity)}">${esc(x.severity)}</span></td><td>${esc(x.frequency)}</td>
       <td><span class="chip ${statusClass(x.status)}">${esc(x.status)}</span></td><td>${esc(x.owner)}</td>
       <td>${esc(x.timestamp)}</td><td>${linkify(x.callLink)}</td>
+      <td>${x.promptVersion ? `<span class="chip neutral">${esc(x.promptVersion)}</span>` : "—"}</td>
       <td><div class="actions"><button class="small" onclick="openEntryModal('${x.id}')">Edit</button><button class="small danger" onclick="deleteEntry('${x.id}')">Del</button></div></td>
     </tr>`).join("") : `<tr><td colspan="${COLUMNS.length + 1}"><div class="empty"><div class="big">No matching entries</div><div>Adjust filters or add a new entry.</div></div></td></tr>`;
   return `<h2 class="view-title">AI Human Quality Tracker</h2>
@@ -643,8 +648,9 @@ function bindTrackerFilters() {
 function openEntryModal(id) {
   const c = state.config;
   const e = id ? state.entries.find(x => x.id === id) : null;
-  const v = e || { dateReviewed: todayISO(), reviewer: "", environment: c.environments[0] || "", agent: "", callLink: "", timestamp: "", categories: [], behavior: "", humanWould: "", callerImpact: "", severity: c.severities[0] || "", frequency: c.frequencies[0] || "", status: c.statuses[0] || "", owner: c.owners[0] || "", recommendedFix: "", notes: "" };
+  const v = e || { dateReviewed: todayISO(), reviewer: "", environment: c.environments[0] || "", agent: "", callLink: "", timestamp: "", categories: [], promptVersion: "", behavior: "", humanWould: "", callerImpact: "", severity: c.severities[0] || "", frequency: c.frequencies[0] || "", status: c.statuses[0] || "", owner: c.owners[0] || "", recommendedFix: "", notes: "" };
   modalCats = entryCats(v);
+  modalPrompt = v.promptVersion || "";
   document.getElementById("modalRoot").innerHTML = `<div class="overlay" id="overlay"><div class="modal">
       <div class="modal-head"><h3>${e ? "Edit" : "New"} QA Entry</h3><div style="flex:1"></div><button class="ghost" onclick="closeModal()">✕</button></div>
       <div class="modal-body"><div class="form-grid">
@@ -665,6 +671,7 @@ function openEntryModal(id) {
           <label class="field"><span>Frequency</span><select id="m_frequency">${options(c.frequencies, v.frequency)}</select></label>
           <label class="field"><span>Status</span><select id="m_status">${options(c.statuses, v.status)}</select></label>
           <label class="field"><span>Owner</span><select id="m_owner">${options(c.owners, v.owner)}</select></label>
+          <label class="field span3"><span>Prompt Version</span><div id="promptVerBox">${promptVerBoxHTML()}</div></label>
           <label class="field span3"><span>Recommended Fix</span><textarea id="m_recommendedFix" placeholder="Suggested improvement…">${esc(v.recommendedFix)}</textarea></label>
           <label class="field span3"><span>Notes</span><textarea id="m_notes" placeholder="Additional context…">${esc(v.notes)}</textarea></label>
       </div></div>
@@ -682,6 +689,33 @@ function entryCatChipsHTML() {
 function refreshEntryCatChips() { const el = document.getElementById("catChips"); if (el) el.innerHTML = entryCatChipsHTML(); }
 window.__addEntryCat = function (name) { if (name && !modalCats.includes(name)) { modalCats.push(name); refreshEntryCatChips(); } };
 window.__removeEntryCat = function (name) { modalCats = modalCats.filter(c => c !== name); refreshEntryCatChips(); };
+function promptVerBoxHTML() {
+  const list = state.config.promptVersions || [];
+  const chips = list.length ? list.map((v, i) => `<span class="chip ${v === modalPrompt ? "progress" : "neutral"} cat-chip" style="cursor:pointer" title="Click to use this prompt version" onclick="window.__selectPromptVersion(${i})">${esc(v)}<button type="button" title="Delete from saved versions" onclick="event.stopPropagation();window.__deletePromptVersion(${i})">✕</button></span>`).join(" ") : "<span class='inline-note'>No saved prompt versions yet.</span>";
+  return `<div class="cat-chips" style="margin-bottom:6px">${chips}</div>
+    <div style="display:flex;gap:8px;align-items:center">
+      <input type="text" id="promptVerNew" placeholder="Type a prompt version, e.g. v2.3-greeting" style="flex:1" onkeydown="if(event.key==='Enter'){event.preventDefault();window.__addPromptVersion();}">
+      <button type="button" onclick="window.__addPromptVersion()">Add</button>
+    </div>
+    <div class="hint">Selected: ${modalPrompt ? esc(modalPrompt) : "none"}. Click a chip to reuse it; ✕ removes it for everyone.</div>`;
+}
+function refreshPromptVerBox() { const el = document.getElementById("promptVerBox"); if (el) el.innerHTML = promptVerBoxHTML(); }
+window.__selectPromptVersion = function (i) { const list = state.config.promptVersions || []; const v = list[i]; if (v == null) return; modalPrompt = (modalPrompt === v) ? "" : v; refreshPromptVerBox(); };
+window.__addPromptVersion = async function () {
+  const inp = document.getElementById("promptVerNew"); if (!inp) return;
+  const v = inp.value.trim(); if (!v) { toast("Type a prompt version first."); return; }
+  if (!Array.isArray(state.config.promptVersions)) state.config.promptVersions = [];
+  if (!state.config.promptVersions.includes(v)) state.config.promptVersions.push(v);
+  modalPrompt = v; inp.value = ""; refreshPromptVerBox();
+  try { await persistConfig(); toast("Prompt version saved."); } catch (e) { if (e.message !== "unauthorized") toast("Save failed: " + e.message); }
+};
+window.__deletePromptVersion = async function (i) {
+  const list = state.config.promptVersions || []; const v = list[i]; if (v == null) return;
+  if (!confirm('Delete prompt version "' + v + '" from the saved list?')) return;
+  state.config.promptVersions = list.filter((_, idx) => idx !== i);
+  if (modalPrompt === v) modalPrompt = ""; refreshPromptVerBox();
+  try { await persistConfig(); toast("Prompt version deleted."); } catch (e) { if (e.message !== "unauthorized") toast("Delete failed: " + e.message); }
+};
 function closeModal() { document.getElementById("modalRoot").innerHTML = ""; }
 
 async function saveEntry(id) {
@@ -690,6 +724,7 @@ async function saveEntry(id) {
   const data = {}; fields.forEach(f => data[f] = get(f));
   data.categories = modalCats.slice();
   data.category = modalCats[0] || "";
+  data.promptVersion = modalPrompt;
   if (!data.behavior) { toast("Please describe the behavior observed."); return; }
   if (!data.categories.length) { toast("Please select at least one issue category."); return; }
   const btn = document.getElementById("saveEntryBtn"); if (btn) btn.disabled = true;
@@ -864,8 +899,8 @@ function saveList(key) {
 /* -------------------------------- Export ---------------------------------- */
 function csvCell(v) { const s = String(v == null ? "" : v); return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s; }
 function exportCSV() {
-  const cols = ["dateReviewed", "reviewer", "environment", "agent", "callLink", "timestamp", "categories", "behavior", "humanWould", "callerImpact", "severity", "frequency", "status", "owner", "recommendedFix", "notes"];
-  const headers = ["Date Reviewed", "Reviewer Name", "Environment", "Agent Name", "Call Link", "Timestamp", "Issue Categories", "Specific Behavior Observed", "What a Human Would Have Done", "Caller Impact", "Severity", "Frequency", "Status", "Owner", "Recommended Fix", "Notes"];
+  const cols = ["dateReviewed", "reviewer", "environment", "agent", "callLink", "timestamp", "categories", "promptVersion", "behavior", "humanWould", "callerImpact", "severity", "frequency", "status", "owner", "recommendedFix", "notes"];
+  const headers = ["Date Reviewed", "Reviewer Name", "Environment", "Agent Name", "Call Link", "Timestamp", "Issue Categories", "Prompt Version", "Specific Behavior Observed", "What a Human Would Have Done", "Caller Impact", "Severity", "Frequency", "Status", "Owner", "Recommended Fix", "Notes"];
   const list = activeTab === "tracker" ? sortEntries(applyFilters(state.entries)) : state.entries;
   const lines = [headers.join(",")]; list.forEach(x => lines.push(cols.map(c => csvCell(c === "categories" ? entryCats(x).join("; ") : x[c])).join(",")));
   download("ai_human_quality_tracker_" + todayISO() + ".csv", lines.join("\n"), "text/csv");

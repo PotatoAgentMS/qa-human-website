@@ -106,6 +106,12 @@
   .login-card p { color: var(--muted); margin: 0 0 18px; font-size: 13px; }
   .login-err { color: var(--bad); font-size: 12.5px; margin-top: 10px; min-height: 16px; }
   .loading { text-align: center; padding: 80px 16px; color: var(--muted); }
+  /* Multi-category chips */
+  .cat-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; min-height: 24px; }
+  .cat-chips:empty::before { content: "No categories selected yet"; color: var(--muted); font-size: 12px; }
+  .cat-chip { display: inline-flex; align-items: center; gap: 6px; }
+  .cat-chip button { border: none; background: transparent; color: inherit; cursor: pointer; font-size: 12px; line-height: 1; padding: 0; opacity: .7; }
+  .cat-chip button:hover { opacity: 1; }
   /* QA Bible (knowledge base) */
   .kb-toolbar { display: flex; gap: 10px; align-items: center; margin-bottom: 16px; flex-wrap: wrap; }
   .kb-search { max-width: 440px; }
@@ -148,9 +154,11 @@
 
 /* ------------------------------ App state -------------------------------- */
 let pass = sessionStorage.getItem("qa_pass") || null;
-let state = { entries: [], patterns: [], fixes: [], config: null };
+let state = { entries: [], patterns: [], fixes: [], incidents: [], config: null };
 let activeTab = "dashboard";
 let filters = { from: "", to: "", reviewer: "", agent: "", environment: "", category: "", severity: "", status: "", q: "" };
+let incFilters = { from: "", to: "", customer: "", category: "", source: "", status: "" };
+let modalCats = [];
 let sortKey = "dateReviewed";
 let sortDir = -1;
 let busy = false;
@@ -363,9 +371,19 @@ function linkify(url) {
 }
 function sevClass(s) { const k = (s || "").toLowerCase(); if (k.startsWith("crit")) return "crit"; if (k.startsWith("maj")) return "major"; if (k.startsWith("min")) return "minor"; return "neutral"; }
 function sevColor(s) { const k = sevClass(s); return k === "crit" ? "var(--crit)" : k === "major" ? "var(--warn)" : k === "minor" ? "var(--good)" : "var(--muted)"; }
-function statusClass(s) { const k = (s || "").toLowerCase(); if (k.includes("open")) return "open"; if (k.includes("progress")) return "progress"; if (k.includes("monitor")) return "monitoring"; if (k.includes("resolv")) return "resolved"; if (k.includes("clos")) return "closed"; return "neutral"; }
+function statusClass(s) { const k = (s || "").toLowerCase(); if (k.includes("open")) return "open"; if (k.includes("progress") || k.includes("investig")) return "progress"; if (k.includes("monitor")) return "monitoring"; if (k.includes("resolv")) return "resolved"; if (k.includes("clos")) return "closed"; return "neutral"; }
 function toast(msg) { const t = document.getElementById("toast"); t.textContent = msg; t.classList.add("show"); clearTimeout(toast._t); toast._t = setTimeout(() => t.classList.remove("show"), 2200); }
 function options(list, selected) { return (list || []).map(v => `<option value="${esc(v)}"${v === selected ? " selected" : ""}>${esc(v)}</option>`).join(""); }
+function entryCats(x) { if (Array.isArray(x.categories)) return x.categories.filter(Boolean); if (x.category) return [x.category]; return []; }
+function catChips(list) { const a = list || []; return a.length ? a.map(c => `<span class="chip neutral">${esc(c)}</span>`).join(" ") : "<span class='inline-note'>—</span>"; }
+function countByMulti(items, listFn) { const m = new Map(); items.forEach(it => (listFn(it) || []).forEach(k => { k = k || "—"; m.set(k, (m.get(k) || 0) + 1); })); return [...m.entries()].sort((a, b) => b[1] - a[1]); }
+const INCIDENT_STATUSES = ["Open", "Investigating", "Resolved"];
+const DETECT_SOURCES = ["QA", "Customer"];
+function parseT(s) { if (!s) return null; const d = new Date(s); return isNaN(d.getTime()) ? null : d.getTime(); }
+function durMin(a, b) { const x = parseT(a), y = parseT(b); if (x == null || y == null) return null; return Math.round((y - x) / 60000); }
+function fmtDur(min) { if (min == null || min < 0) return "—"; const h = Math.floor(min / 60), m = min % 60; return h ? `${h}h ${m}m` : `${m}m`; }
+function fmtDT(s) { const t = parseT(s); if (t == null) return "—"; const d = new Date(t); return d.toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }); }
+function custBeforeQA(it) { const q = parseT(it.qaDetectTime), c = parseT(it.customerDetectTime); if (c != null && q != null) return c < q; if (c != null && q == null) return true; if (it.source) return it.source === "Customer"; return false; }
 
 /* --------------------------------- API ----------------------------------- */
 async function api(path, { method = "GET", body } = {}) {
@@ -396,7 +414,7 @@ function normalizeConfig(cfg) {
 }
 async function loadData() {
   const d = await api("/api/data");
-  state = { entries: d.entries || [], patterns: d.patterns || [], fixes: d.fixes || [], config: normalizeConfig(d.config) };
+  state = { entries: d.entries || [], patterns: d.patterns || [], fixes: d.fixes || [], incidents: d.incidents || [], config: normalizeConfig(d.config) };
 }
 async function putItem(kind, item) {
   await api("/api/save", { method: "POST", body: { kind, item } });
@@ -440,6 +458,7 @@ function renderLogin(errMsg) {
 const TABS = [
   { key: "dashboard", label: "Dashboard" },
   { key: "tracker", label: "Tracker" },
+  { key: "incidents", label: "Incident Tracking" },
   { key: "patterns", label: "Recurring Patterns" },
   { key: "fixes", label: "Recommended Fixes" },
   { key: "bible", label: "QA Bible" },
@@ -484,11 +503,13 @@ function render() {
   const view = document.getElementById("view"); if (!view) return;
   if (activeTab === "dashboard") view.innerHTML = viewDashboard();
   else if (activeTab === "tracker") view.innerHTML = viewTracker();
+  else if (activeTab === "incidents") view.innerHTML = viewIncidents();
   else if (activeTab === "patterns") view.innerHTML = viewPatterns();
   else if (activeTab === "fixes") view.innerHTML = viewFixes();
   else if (activeTab === "bible") view.innerHTML = viewBible();
   else if (activeTab === "settings") view.innerHTML = viewSettings();
   if (activeTab === "tracker") bindTrackerFilters();
+  if (activeTab === "incidents") bindIncidentFilters();
   if (activeTab === "bible") bindBibleControls();
 }
 function countBy(items, keyFn) {
@@ -532,7 +553,7 @@ function viewDashboard() {
       ${kpi("Last 7 Days", last7, "recent reviews")}
     </div>
     <div class="charts-grid">
-      <div class="panel"><h3>Issues by Category</h3>${barChart(countBy(e, x => x.category))}</div>
+      <div class="panel"><h3>Issues by Category</h3>${barChart(countByMulti(e, entryCats))}</div>
       <div class="panel"><h3>Issues by Severity</h3>${barChart(countBy(e, x => x.severity), sevColor)}</div>
       <div class="panel"><h3>Issues by Agent</h3>${barChart(countBy(e, x => x.agent))}</div>
       <div class="panel"><h3>Issues by Environment</h3>${barChart(countBy(e, x => x.environment))}</div>
@@ -558,7 +579,7 @@ function applyFilters(list) {
     if (filters.reviewer && x.reviewer !== filters.reviewer) return false;
     if (filters.agent && x.agent !== filters.agent) return false;
     if (filters.environment && x.environment !== filters.environment) return false;
-    if (filters.category && x.category !== filters.category) return false;
+    if (filters.category && !entryCats(x).includes(filters.category)) return false;
     if (filters.severity && x.severity !== filters.severity) return false;
     if (filters.status && x.status !== filters.status) return false;
     if (filters.q) { const hay = [x.behavior, x.humanWould, x.callerImpact, x.notes, x.recommendedFix, x.agent, x.reviewer].join(" ").toLowerCase(); if (!hay.includes(filters.q.toLowerCase())) return false; }
@@ -587,7 +608,7 @@ function viewTracker() {
   const head = `<tr>${COLUMNS.map(col => `<th data-sort="${col.key}">${esc(col.label)}${sortKey === col.key ? (sortDir === 1 ? " ▲" : " ▼") : ""}</th>`).join("")}<th>Actions</th></tr>`;
   const body = filtered.length ? filtered.map(x => `<tr>
       <td>${esc(x.dateReviewed)}</td><td>${esc(x.reviewer)}</td><td><span class="chip neutral">${esc(x.environment)}</span></td>
-      <td>${esc(x.agent)}</td><td>${esc(x.category)}</td><td class="wrap">${esc(x.behavior)}</td>
+      <td>${esc(x.agent)}</td><td class="wrap">${catChips(entryCats(x))}</td><td class="wrap">${esc(x.behavior)}</td>
       <td class="wrap">${esc(x.humanWould)}</td><td class="wrap">${esc(x.callerImpact)}</td>
       <td><span class="chip ${sevClass(x.severity)}">${esc(x.severity)}</span></td><td>${esc(x.frequency)}</td>
       <td><span class="chip ${statusClass(x.status)}">${esc(x.status)}</span></td><td>${esc(x.owner)}</td>
@@ -622,8 +643,8 @@ function bindTrackerFilters() {
 function openEntryModal(id) {
   const c = state.config;
   const e = id ? state.entries.find(x => x.id === id) : null;
-  const v = e || { dateReviewed: todayISO(), reviewer: "", environment: c.environments[0] || "", agent: "", callLink: "", timestamp: "", category: c.categories[0] ? c.categories[0].name : "", behavior: "", humanWould: "", callerImpact: "", severity: c.severities[0] || "", frequency: c.frequencies[0] || "", status: c.statuses[0] || "", owner: c.owners[0] || "", recommendedFix: "", notes: "" };
-  const catDesc = (c.categories.find(x => x.name === v.category) || {}).description || "";
+  const v = e || { dateReviewed: todayISO(), reviewer: "", environment: c.environments[0] || "", agent: "", callLink: "", timestamp: "", categories: [], behavior: "", humanWould: "", callerImpact: "", severity: c.severities[0] || "", frequency: c.frequencies[0] || "", status: c.statuses[0] || "", owner: c.owners[0] || "", recommendedFix: "", notes: "" };
+  modalCats = entryCats(v);
   document.getElementById("modalRoot").innerHTML = `<div class="overlay" id="overlay"><div class="modal">
       <div class="modal-head"><h3>${e ? "Edit" : "New"} QA Entry</h3><div style="flex:1"></div><button class="ghost" onclick="closeModal()">✕</button></div>
       <div class="modal-body"><div class="form-grid">
@@ -633,7 +654,10 @@ function openEntryModal(id) {
           <label class="field"><span>Agent Name</span><input type="text" id="m_agent" value="${esc(v.agent)}" placeholder="e.g. Scheduling Agent"></label>
           <label class="field"><span>Call Link</span><input type="text" id="m_callLink" value="${esc(v.callLink)}" placeholder="https://…"></label>
           <label class="field"><span>Timestamp</span><input type="text" id="m_timestamp" value="${esc(v.timestamp)}" placeholder="e.g. 1:17"></label>
-          <label class="field span2"><span>Issue Category</span><select id="m_category" onchange="document.getElementById('catDescHint').textContent=window.__catDesc(this.value)">${options(c.categories.map(x => x.name), v.category)}</select><div class="hint" id="catDescHint">${esc(catDesc)}</div></label>
+          <label class="field span2"><span>Issue Category (select one or more)</span>
+            <div id="catChips" class="cat-chips">${entryCatChipsHTML()}</div>
+            <select id="m_categoryAdd" onchange="window.__addEntryCat(this.value); this.value='';"><option value="">+ Add category…</option>${options(c.categories.map(x => x.name), "")}</select>
+            <div class="hint" id="catDescHint">Add every category that applies to this issue.</div></label>
           <label class="field"><span>Severity</span><select id="m_severity">${options(c.severities, v.severity)}</select></label>
           <label class="field span3"><span>Specific Behavior Observed</span><textarea id="m_behavior" placeholder="What the agent actually did…">${esc(v.behavior)}</textarea></label>
           <label class="field span3"><span>What a Human Would Have Done</span><textarea id="m_humanWould" placeholder="The natural / correct human behavior…">${esc(v.humanWould)}</textarea></label>
@@ -649,13 +673,25 @@ function openEntryModal(id) {
     </div></div>`;
 }
 window.__catDesc = function (name) { return (state.config.categories.find(x => x.name === name) || {}).description || ""; };
+function entryCatChipsHTML() {
+  return modalCats.length ? modalCats.map(c => {
+    const desc = (state.config.categories.find(x => x.name === c) || {}).description || "";
+    return `<span class="chip neutral cat-chip" title="${esc(desc)}">${esc(c)}<button type="button" title="Remove" onclick="window.__removeEntryCat('${esc(c).replace(/'/g, "\\'")}')">✕</button></span>`;
+  }).join(" ") : "";
+}
+function refreshEntryCatChips() { const el = document.getElementById("catChips"); if (el) el.innerHTML = entryCatChipsHTML(); }
+window.__addEntryCat = function (name) { if (name && !modalCats.includes(name)) { modalCats.push(name); refreshEntryCatChips(); } };
+window.__removeEntryCat = function (name) { modalCats = modalCats.filter(c => c !== name); refreshEntryCatChips(); };
 function closeModal() { document.getElementById("modalRoot").innerHTML = ""; }
 
 async function saveEntry(id) {
   const get = k => { const el = document.getElementById("m_" + k); return el ? el.value.trim() : ""; };
-  const fields = ["dateReviewed", "reviewer", "environment", "agent", "callLink", "timestamp", "category", "behavior", "humanWould", "callerImpact", "severity", "frequency", "status", "owner", "recommendedFix", "notes"];
+  const fields = ["dateReviewed", "reviewer", "environment", "agent", "callLink", "timestamp", "behavior", "humanWould", "callerImpact", "severity", "frequency", "status", "owner", "recommendedFix", "notes"];
   const data = {}; fields.forEach(f => data[f] = get(f));
+  data.categories = modalCats.slice();
+  data.category = modalCats[0] || "";
   if (!data.behavior) { toast("Please describe the behavior observed."); return; }
+  if (!data.categories.length) { toast("Please select at least one issue category."); return; }
   const btn = document.getElementById("saveEntryBtn"); if (btn) btn.disabled = true;
   try {
     let item;
@@ -667,7 +703,7 @@ async function saveEntry(id) {
 }
 async function deleteEntry(id) {
   const e = state.entries.find(x => x.id === id);
-  if (!confirm("Delete this entry?\n\n" + (e ? (e.category + ": " + (e.behavior || "").slice(0, 80)) : ""))) return;
+  if (!confirm("Delete this entry?\n\n" + (e ? (entryCats(e).join(", ") + ": " + (e.behavior || "").slice(0, 80)) : ""))) return;
   try { await removeItemRemote("entries", id); render(); toast("Entry deleted."); }
   catch (err) { if (err.message !== "unauthorized") toast("Delete failed: " + err.message); }
 }
@@ -675,8 +711,8 @@ async function deleteEntry(id) {
 /* ------------------------------- PATTERNS --------------------------------- */
 function viewPatterns() {
   const e = state.entries;
-  const byCat = countBy(e, x => x.category).filter(p => p[1] >= 2);
-  const byAgentCat = countBy(e, x => (x.agent || "—") + " · " + (x.category || "—")).filter(p => p[1] >= 2);
+  const byCat = countByMulti(e, entryCats).filter(p => p[1] >= 2);
+  const byAgentCat = countByMulti(e, x => entryCats(x).map(c => (x.agent || "—") + " · " + c)).filter(p => p[1] >= 2);
   const autoCat = byCat.length ? byCat.map(([c, n]) => `<div class="pattern-item"><div class="pi-top"><span class="pi-cat">${esc(c)}</span><span class="count-pill">${n} occurrences</span></div></div>`).join("") : `<div class="inline-note">No category has repeated yet (needs 2+).</div>`;
   const autoAgent = byAgentCat.length ? byAgentCat.map(([c, n]) => `<div class="pattern-item"><div class="pi-top"><span class="pi-cat">${esc(c)}</span><span class="count-pill">${n}×</span></div></div>`).join("") : `<div class="inline-note">No agent+category combination has repeated yet.</div>`;
   const manual = state.patterns.length ? state.patterns.map(p => `
@@ -828,10 +864,10 @@ function saveList(key) {
 /* -------------------------------- Export ---------------------------------- */
 function csvCell(v) { const s = String(v == null ? "" : v); return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s; }
 function exportCSV() {
-  const cols = ["dateReviewed", "reviewer", "environment", "agent", "callLink", "timestamp", "category", "behavior", "humanWould", "callerImpact", "severity", "frequency", "status", "owner", "recommendedFix", "notes"];
-  const headers = ["Date Reviewed", "Reviewer Name", "Environment", "Agent Name", "Call Link", "Timestamp", "Issue Category", "Specific Behavior Observed", "What a Human Would Have Done", "Caller Impact", "Severity", "Frequency", "Status", "Owner", "Recommended Fix", "Notes"];
+  const cols = ["dateReviewed", "reviewer", "environment", "agent", "callLink", "timestamp", "categories", "behavior", "humanWould", "callerImpact", "severity", "frequency", "status", "owner", "recommendedFix", "notes"];
+  const headers = ["Date Reviewed", "Reviewer Name", "Environment", "Agent Name", "Call Link", "Timestamp", "Issue Categories", "Specific Behavior Observed", "What a Human Would Have Done", "Caller Impact", "Severity", "Frequency", "Status", "Owner", "Recommended Fix", "Notes"];
   const list = activeTab === "tracker" ? sortEntries(applyFilters(state.entries)) : state.entries;
-  const lines = [headers.join(",")]; list.forEach(x => lines.push(cols.map(c => csvCell(x[c])).join(",")));
+  const lines = [headers.join(",")]; list.forEach(x => lines.push(cols.map(c => csvCell(c === "categories" ? entryCats(x).join("; ") : x[c])).join(",")));
   download("ai_human_quality_tracker_" + todayISO() + ".csv", lines.join("\n"), "text/csv");
   toast("Exported " + list.length + " rows.");
 }
@@ -861,18 +897,152 @@ function download(name, content, type) {
 async function loadSampleData() {
   if (state.entries.length && !confirm("Add sample entries to the shared database?")) return;
   const samples = [
-    { dateReviewed: "2026-06-24", reviewer: "Jordan P.", environment: "PROD", agent: "Scheduling Agent", callLink: "https://app.phonely.ai/call-history/sample1", timestamp: "1:17", category: "Variable and Data Capture", behavior: "Caller gave 5 digits but the agent said it only heard 4 and re-asked.", humanWould: "Read back the full number to confirm rather than miscounting.", callerImpact: "Caller had to repeat info, sounded robotic.", severity: "Critical", frequency: "Occasional", status: "Open", owner: "Unassigned", recommendedFix: "Confirm digit count and read back before validating.", notes: "State Transitioning issue." },
-    { dateReviewed: "2026-06-24", reviewer: "Jordan P.", environment: "PROD", agent: "Intake Agent", callLink: "https://app.phonely.ai/call-history/sample2", timestamp: "2:38", category: "Listening and Comprehension", behavior: "Agent kept re-asking for the address and email already provided.", humanWould: "Acknowledge the info given and move to the next step.", callerImpact: "Caller frustrated, repeated themselves 4 times.", severity: "Major", frequency: "Frequent", status: "In Progress", owner: "Unassigned", recommendedFix: "Detect already-captured fields before prompting.", notes: "Stuck in Collect block." },
-    { dateReviewed: "2026-06-23", reviewer: "Sam K.", environment: "ENTERPRISE", agent: "Front Desk Agent", callLink: "https://enterprise.phonely.ai/call-history/sample3", timestamp: "2:39", category: "Transfer and Escalation", behavior: "Delivered an incomplete transfer message before handing off.", humanWould: "Give a clear, warm transfer explanation to the caller.", callerImpact: "Caller confused about what was happening.", severity: "Major", frequency: "Occasional", status: "Monitoring", owner: "Unassigned", recommendedFix: "Use full transfer script with reason and next step.", notes: "" },
-    { dateReviewed: "2026-06-23", reviewer: "Sam K.", environment: "CANARY", agent: "Scheduling Agent", callLink: "https://app.phonely.ai/call-history/sample4", timestamp: "2:56", category: "Hallucination or Assumption", behavior: "Agent asked for best contact number on a block where it should not.", humanWould: "Follow the workflow order and not invent extra questions.", callerImpact: "Call felt off-script and unnatural.", severity: "Minor", frequency: "One-off", status: "Resolved", owner: "Unassigned", recommendedFix: "Enforce block-level field scoping.", notes: "" },
+    { dateReviewed: "2026-06-24", reviewer: "Jordan P.", environment: "PROD", agent: "Scheduling Agent", callLink: "https://app.phonely.ai/call-history/sample1", timestamp: "1:17", categories: ["Variable and Data Capture", "Listening and Comprehension"], behavior: "Caller gave 5 digits but the agent said it only heard 4 and re-asked.", humanWould: "Read back the full number to confirm rather than miscounting.", callerImpact: "Caller had to repeat info, sounded robotic.", severity: "Critical", frequency: "Occasional", status: "Open", owner: "Unassigned", recommendedFix: "Confirm digit count and read back before validating.", notes: "State Transitioning issue." },
+    { dateReviewed: "2026-06-24", reviewer: "Jordan P.", environment: "PROD", agent: "Intake Agent", callLink: "https://app.phonely.ai/call-history/sample2", timestamp: "2:38", categories: ["Listening and Comprehension"], behavior: "Agent kept re-asking for the address and email already provided.", humanWould: "Acknowledge the info given and move to the next step.", callerImpact: "Caller frustrated, repeated themselves 4 times.", severity: "Major", frequency: "Frequent", status: "In Progress", owner: "Unassigned", recommendedFix: "Detect already-captured fields before prompting.", notes: "Stuck in Collect block." },
+    { dateReviewed: "2026-06-23", reviewer: "Sam K.", environment: "ENTERPRISE", agent: "Front Desk Agent", callLink: "https://enterprise.phonely.ai/call-history/sample3", timestamp: "2:39", categories: ["Transfer and Escalation"], behavior: "Delivered an incomplete transfer message before handing off.", humanWould: "Give a clear, warm transfer explanation to the caller.", callerImpact: "Caller confused about what was happening.", severity: "Major", frequency: "Occasional", status: "Monitoring", owner: "Unassigned", recommendedFix: "Use full transfer script with reason and next step.", notes: "" },
+    { dateReviewed: "2026-06-23", reviewer: "Sam K.", environment: "CANARY", agent: "Scheduling Agent", callLink: "https://app.phonely.ai/call-history/sample4", timestamp: "2:56", categories: ["Hallucination or Assumption", "Policy or Workflow Issues"], behavior: "Agent asked for best contact number on a block where it should not.", humanWould: "Follow the workflow order and not invent extra questions.", callerImpact: "Call felt off-script and unnatural.", severity: "Minor", frequency: "One-off", status: "Resolved", owner: "Unassigned", recommendedFix: "Enforce block-level field scoping.", notes: "" },
   ];
   toast("Loading sample data…");
   try {
     for (const s of samples) await putItem("entries", Object.assign({ id: uid(), createdAt: nowISO(), updatedAt: nowISO() }, s));
     if (!state.patterns.length) await putItem("patterns", { id: uid(), title: "Agent re-asks for data already given", category: "Listening and Comprehension", description: "Across multiple PROD calls the agent loops on collected fields (address, email, phone).", status: "In Progress" });
     if (!state.fixes.length) await putItem("fixes", { id: uid(), category: "Listening and Comprehension", title: "Track captured fields before prompting", fix: "Maintain a captured-fields map and skip prompts for values already stored and confirmed.", priority: "Major", owner: "Unassigned", status: "In Progress" });
+    if (!state.incidents.length) {
+      const incSamples = [
+        { incidentId: "INC-001", date: "2026-06-24", customer: "PPC Pest Control", category: "Policy or Workflow Issues", description: "Callers disqualified immediately after the caller path prompt.", source: "Customer", startTime: "2026-06-24T09:05", qaDetectTime: "2026-06-24T15:30", customerDetectTime: "2026-06-24T10:10", declaredTime: "2026-06-24T10:30", raisedBy: "Customer", status: "Resolved", owner: "Unassigned", notes: "Flow/qualification logic issue." },
+        { incidentId: "INC-002", date: "2026-06-25", customer: "Acme Medicare", category: "API and Tool Handling", description: "Agent treated empty eligibility API response as success.", source: "QA", startTime: "2026-06-25T08:00", qaDetectTime: "2026-06-25T09:15", customerDetectTime: "", declaredTime: "2026-06-25T09:40", raisedBy: "QA", status: "Investigating", owner: "Unassigned", notes: "" },
+        { incidentId: "INC-003", date: "2026-06-26", customer: "Northside Dental", category: "Transfer and Escalation", description: "Callers dropped during transfer wait.", source: "Customer", startTime: "2026-06-26T11:00", qaDetectTime: "2026-06-26T17:00", customerDetectTime: "2026-06-26T12:05", declaredTime: "2026-06-26T12:20", raisedBy: "Customer", status: "Open", owner: "Unassigned", notes: "Impatience at transfer." },
+      ];
+      for (const s of incSamples) await putItem("incidents", Object.assign({ id: uid(), createdAt: nowISO(), updatedAt: nowISO() }, s));
+    }
     render(); toast("Sample data loaded.");
   } catch (e) { if (e.message !== "unauthorized") toast("Failed: " + e.message); }
+}
+
+/* --------------------------- INCIDENT TRACKING ---------------------------- */
+function uniqInc(key) { return [...new Set(state.incidents.map(x => x[key]).filter(Boolean))].sort(); }
+function applyIncidentFilters(list) {
+  return list.filter(x => {
+    if (incFilters.from && (x.date || "") < incFilters.from) return false;
+    if (incFilters.to && (x.date || "") > incFilters.to) return false;
+    if (incFilters.customer && x.customer !== incFilters.customer) return false;
+    if (incFilters.category && x.category !== incFilters.category) return false;
+    if (incFilters.source && x.source !== incFilters.source) return false;
+    if (incFilters.status && x.status !== incFilters.status) return false;
+    return true;
+  });
+}
+function viewIncidents() {
+  const c = state.config;
+  const list = applyIncidentFilters(state.incidents).sort((a, b) => (b.date || "").localeCompare(a.date || ""));
+  const total = list.length;
+  const byQA = list.filter(x => x.raisedBy === "QA").length;
+  const byCust = list.filter(x => x.raisedBy === "Customer").length;
+  const custBefore = list.filter(custBeforeQA).length;
+  const pct = total ? Math.round((custBefore / total) * 100) : 0;
+  const qaTimes = list.map(x => durMin(x.startTime, x.qaDetectTime)).filter(v => v != null && v >= 0);
+  const avgQA = qaTimes.length ? Math.round(qaTimes.reduce((a, b) => a + b, 0) / qaTimes.length) : null;
+  const cards = `<div class="grid-cards" style="margin-bottom:18px">
+      ${kpi("Total Incidents", total, "matching filters")}
+      ${kpi("Raised by QA", byQA, "QA-originated")}
+      ${kpi("Raised by Customers", byCust, "customer-originated", byCust ? "var(--warn)" : "var(--good)")}
+      ${kpi("Customer Before QA", custBefore, "detected by customer first", custBefore ? "var(--bad)" : "var(--good)")}
+      ${kpi("% Customer Before QA", pct + "%", "of matching incidents", pct ? "var(--bad)" : "var(--good)")}
+      ${kpi("Avg Time to QA Detection", fmtDur(avgQA), "start → QA detected")}
+    </div>`;
+  const filterRow = `<div class="panel"><div class="filters">
+        <label class="field"><span>From date</span><input type="date" id="if_from" value="${esc(incFilters.from)}"></label>
+        <label class="field"><span>To date</span><input type="date" id="if_to" value="${esc(incFilters.to)}"></label>
+        <label class="field"><span>Customer / Account</span><select id="if_customer"><option value="">All</option>${options(uniqInc("customer"), incFilters.customer)}</select></label>
+        <label class="field"><span>Category</span><select id="if_category"><option value="">All</option>${options(c.categories.map(x => x.name), incFilters.category)}</select></label>
+        <label class="field"><span>Source of first detection</span><select id="if_source"><option value="">All</option>${options(DETECT_SOURCES, incFilters.source)}</select></label>
+        <label class="field"><span>Status</span><select id="if_status"><option value="">All</option>${options(INCIDENT_STATUSES, incFilters.status)}</select></label>
+        <div><button id="if_clear">Clear filters</button></div>
+      </div></div>`;
+  const cols = ["Incident ID", "Date", "Customer / Account", "Category", "Description", "Source", "Raised By", "Start → QA", "Start → Customer", "Customer Before QA", "Status", "Owner", "Actions"];
+  const head = `<tr>${cols.map(c => `<th>${esc(c)}</th>`).join("")}</tr>`;
+  const body = list.length ? list.map(x => {
+    const before = custBeforeQA(x);
+    const hasDet = x.customerDetectTime || x.source;
+    return `<tr>
+      <td>${esc(x.incidentId)}</td>
+      <td>${esc(x.date)}</td>
+      <td>${esc(x.customer)}</td>
+      <td class="wrap">${x.category ? `<span class="chip neutral">${esc(x.category)}</span>` : "—"}</td>
+      <td class="wrap">${esc(x.description)}</td>
+      <td>${x.source ? `<span class="chip ${x.source === "Customer" ? "major" : "progress"}">${esc(x.source)}</span>` : "—"}</td>
+      <td>${esc(x.raisedBy || "—")}</td>
+      <td title="${esc(fmtDT(x.startTime) + " → " + fmtDT(x.qaDetectTime))}">${fmtDur(durMin(x.startTime, x.qaDetectTime))}</td>
+      <td title="${esc(fmtDT(x.startTime) + " → " + fmtDT(x.customerDetectTime))}">${fmtDur(durMin(x.startTime, x.customerDetectTime))}</td>
+      <td>${hasDet ? `<span class="chip ${before ? "crit" : "minor"}">${before ? "Yes" : "No"}</span>` : "—"}</td>
+      <td><span class="chip ${statusClass(x.status)}">${esc(x.status)}</span></td>
+      <td>${esc(x.owner)}</td>
+      <td><div class="actions"><button class="small" onclick="openIncidentModal('${x.id}')">Edit</button><button class="small danger" onclick="deleteIncident('${x.id}')">Del</button></div></td>
+    </tr>`;
+  }).join("") : `<tr><td colspan="${cols.length}"><div class="empty"><div class="big">No incidents yet</div><div>Add an incident or adjust filters.</div></div></td></tr>`;
+  return `<h2 class="view-title">Incident Tracking</h2>
+    <p class="view-sub">Track incidents, who detected them first (QA vs. customer), and detection timing. Shared live with your team.</p>
+    ${cards}
+    ${filterRow}
+    <div class="toolbar">
+      <button class="primary" onclick="openIncidentModal()">+ New Incident</button>
+      <span class="count-pill">${list.length} of ${state.incidents.length} shown</span>
+    </div>
+    <div class="table-wrap"><table><thead>${head}</thead><tbody>${body}</tbody></table></div>`;
+}
+function bindIncidentFilters() {
+  const map = { if_from: "from", if_to: "to", if_customer: "customer", if_category: "category", if_source: "source", if_status: "status" };
+  Object.keys(map).forEach(id => { const el = document.getElementById(id); if (!el) return; el.addEventListener("change", () => { incFilters[map[id]] = el.value; render(); }); });
+  const clear = document.getElementById("if_clear");
+  if (clear) clear.addEventListener("click", () => { incFilters = { from: "", to: "", customer: "", category: "", source: "", status: "" }; render(); });
+}
+function openIncidentModal(id) {
+  const c = state.config;
+  const e = id ? state.incidents.find(x => x.id === id) : null;
+  const nextId = "INC-" + String(state.incidents.length + 1).padStart(3, "0");
+  const v = e || { incidentId: nextId, date: todayISO(), customer: "", category: c.categories[0] ? c.categories[0].name : "", description: "", source: "QA", startTime: "", qaDetectTime: "", customerDetectTime: "", declaredTime: "", raisedBy: "QA", status: INCIDENT_STATUSES[0], owner: c.owners[0] || "", notes: "" };
+  document.getElementById("modalRoot").innerHTML = `<div class="overlay" id="overlay"><div class="modal">
+      <div class="modal-head"><h3>${e ? "Edit" : "New"} Incident</h3><div style="flex:1"></div><button class="ghost" onclick="closeModal()">✕</button></div>
+      <div class="modal-body"><div class="form-grid">
+          <label class="field"><span>Incident ID</span><input type="text" id="i_incidentId" value="${esc(v.incidentId)}" placeholder="e.g. INC-001"></label>
+          <label class="field"><span>Date</span><input type="date" id="i_date" value="${esc(v.date)}"></label>
+          <label class="field"><span>Customer / Account</span><input type="text" id="i_customer" value="${esc(v.customer)}" placeholder="e.g. Acme Co."></label>
+          <label class="field"><span>Incident Category</span><select id="i_category">${options(c.categories.map(x => x.name), v.category)}</select></label>
+          <label class="field"><span>Source of First Detection</span><select id="i_source">${options(DETECT_SOURCES, v.source)}</select></label>
+          <label class="field"><span>Raised By</span><select id="i_raisedBy">${options(DETECT_SOURCES, v.raisedBy)}</select></label>
+          <label class="field span3"><span>Incident Description</span><textarea id="i_description" placeholder="What happened…">${esc(v.description)}</textarea></label>
+          <label class="field"><span>Incident Start Time</span><input type="datetime-local" id="i_startTime" value="${esc(v.startTime)}"></label>
+          <label class="field"><span>QA Detection Time</span><input type="datetime-local" id="i_qaDetectTime" value="${esc(v.qaDetectTime)}"></label>
+          <label class="field"><span>Customer Detection Time</span><input type="datetime-local" id="i_customerDetectTime" value="${esc(v.customerDetectTime)}"></label>
+          <label class="field"><span>Incident Declared Time</span><input type="datetime-local" id="i_declaredTime" value="${esc(v.declaredTime)}"></label>
+          <label class="field"><span>Status</span><select id="i_status">${options(INCIDENT_STATUSES, v.status)}</select></label>
+          <label class="field"><span>Owner</span><select id="i_owner">${options(c.owners, v.owner)}</select></label>
+          <label class="field span3"><span>Notes</span><textarea id="i_notes" placeholder="Additional context…">${esc(v.notes)}</textarea></label>
+      </div></div>
+      <div class="modal-foot"><button onclick="closeModal()">Cancel</button>
+        <button class="primary" id="saveIncidentBtn" onclick="saveIncident(${e ? "'" + e.id + "'" : "null"})">${e ? "Update" : "Save"} Incident</button></div>
+    </div></div>`;
+}
+async function saveIncident(id) {
+  const get = k => { const el = document.getElementById("i_" + k); return el ? el.value.trim() : ""; };
+  const fields = ["incidentId", "date", "customer", "category", "description", "source", "startTime", "qaDetectTime", "customerDetectTime", "declaredTime", "raisedBy", "status", "owner", "notes"];
+  const data = {}; fields.forEach(f => data[f] = get(f));
+  if (!data.incidentId) { toast("Please enter an Incident ID."); return; }
+  if (!data.customer) { toast("Please enter a customer / account."); return; }
+  const btn = document.getElementById("saveIncidentBtn"); if (btn) btn.disabled = true;
+  try {
+    let item;
+    if (id) { const e = state.incidents.find(x => x.id === id); item = Object.assign({}, e, data, { updatedAt: nowISO() }); }
+    else { item = Object.assign({ id: uid(), createdAt: nowISO(), updatedAt: nowISO() }, data); }
+    await putItem("incidents", item);
+    closeModal(); render(); toast(id ? "Incident updated." : "Incident added.");
+  } catch (e) { if (e.message !== "unauthorized") { toast("Save failed: " + e.message); if (btn) btn.disabled = false; } }
+}
+async function deleteIncident(id) {
+  const e = state.incidents.find(x => x.id === id);
+  if (!confirm("Delete this incident?\n\n" + (e ? (e.incidentId + " · " + (e.customer || "")) : ""))) return;
+  try { await removeItemRemote("incidents", id); render(); toast("Incident deleted."); }
+  catch (err) { if (err.message !== "unauthorized") toast("Delete failed: " + err.message); }
 }
 
 /* -------------------------------- QA Bible -------------------------------- */
@@ -1123,6 +1293,7 @@ window.addEventListener("focus", () => { if (pass && !document.getElementById("o
 
 // expose handlers used by inline onclick
 Object.assign(window, { openEntryModal, saveEntry, deleteEntry, closeModal, openPatternModal, savePattern, deletePattern, openFixModal, saveFix, deleteFix, addCategory, removeCategory, saveCategories, addListItem, removeListItem, saveList, exportCSV, exportJSON, importJSON, loadSampleData,
+  openIncidentModal, saveIncident, deleteIncident,
   selectBibleSection, toggleBible, toggleBibleEdit, copyBible, moveBibleSection, moveBibleItem, openBibleSectionModal, saveBibleSection, openBibleItemModal, saveBibleItem, confirmDeleteBibleSection, confirmDeleteBibleItem, deleteBibleSection, deleteBibleItem, openConfirmModal, runConfirm, cancelConfirm });
 
 if (pass) boot(); else renderLogin();
